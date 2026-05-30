@@ -1,0 +1,136 @@
+# AGENTS.md — linux-info-mcp
+
+Operating notes for AI coding agents working in this repo. Authoritative spec is `SPEC.md`; this file is a quick orientation + binding conventions.
+
+## What this is
+
+MCP (Model Context Protocol) server, Python, single-host SSH-based read-only diagnostics. Exposes 43 tools today across 12 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`), proc (`lsof`, `pgrep`, `pidof`, `top`), disk (`du`, `lsblk`, `blkid`, `smartctl`), kernel (`dmesg`, `uname`, `sysctl`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
+
+Read `SPEC.md` first before implementing or modifying any tool. SPEC defines arg schemas, validators, env vars, security model, logging events, and architecture. Drift from SPEC = bug.
+
+## Layout
+
+```
+linux_info_mcp/
+  server.py        # MCP entrypoint; auto-discovers tools/* and registers
+  ssh.py           # run_ssh() central subprocess wrapper; SshResult; legacy file-tool builders
+  validate.py      # shared validators (host/path/grep/find/unit/lines/offset_length)
+  log.py           # JSON file logging, TRACE level, ContextVar correlation
+  tools/
+    __init__.py    # ToolSpec dataclass (name/description/input_schema/handler)
+    files.py       # read_file, find_files, read_binary
+    systemctl.py   # systemctl_status, systemctl_list
+    journalctl.py
+    perf.py        # iostat, vmstat, free, df, ps
+tests/             # pytest. test_validate, test_ssh, test_server, test_log + tests/tools/*
+server.py          # top-level shim → linux_info_mcp.server.main()
+SPEC.md            # authoritative spec
+README.md          # user-facing
+pyproject.toml     # uv + hatchling. Entry point: linux-info-mcp = linux_info_mcp.server:main
+```
+
+## Commands
+
+```
+uv sync                    # install
+uv run pytest -q           # run tests (must stay green)
+uv run linux-info-mcp      # run server (stdio)
+uv run python server.py    # alt run
+```
+
+Python: `uv` only. Never `python3`/`pip3`.
+
+## Hard rules
+
+1. **Never weaken a security control.** If a task seems to require it, stop and ask.
+2. **Never run write/mutate commands on remote hosts.** This server is read-only by design and by global policy. No `systemctl restart`, `kill`, `rm`, file edits, package installs, HTTP writes, DB writes, etc.
+3. **Never put builds, logs, or scratch files in `/tmp/`.** Use `$TMPDIR`.
+4. **Never commit secrets.**
+5. **No `Co-Authored-By` lines on commits.** No amends to published commits. No `git add/commit/push/rebase/revert/amend` without explicit per-action authorisation.
+6. **No emojis** in code, comments, commits, PRs, or chat unless explicitly asked.
+
+## Coding conventions
+
+### Per-tool module pattern
+
+Each `tools/<area>.py` exports `TOOLS: list[ToolSpec]`. A ToolSpec is `(name, description, input_schema, handler)`. `server.py` discovers them via `pkgutil.iter_modules`. Submodules whose name starts with `_` are skipped. Names must be unique and non-empty.
+
+A handler receives a `dict`, validates it, builds the remote command string, calls `run_ssh(host, remote_cmd)`, and returns a dict with shape `{stdout, stderr, exit_code, truncated}` (or, for `read_binary`, `{data_base64, bytes_read, stderr, exit_code, truncated}`).
+
+Handlers stay **sync**. The async server entrypoint (`_call_tool` in `server.py`) wraps dispatch with `await asyncio.to_thread(spec.handler, args)` so the blocking `subprocess.run` inside `run_ssh` doesn't pin the event loop, and concurrent MCP requests truly parallelize. Don't make handlers async — that breaks the assumption that `to_thread` is the only thread-pool entry point and would also break ContextVar propagation if you forgot to copy the context manually.
+
+### Security invariants
+
+- Local exec: `subprocess.run([...argv], shell=False, ...)`. Never `shell=True`.
+- Remote exec: shell unavoidable for pipes. Build remote command as a single string. **Every interpolated value passes through `shlex.quote`.** Prefix with `LC_ALL=C`.
+- Reject NUL and newline before quoting. Use `_reject_unsafe_chars` from `validate.py`.
+- Reject hosts that contain whitespace or start with `-`. Honor `LINUX_INFO_HOSTS` allowlist.
+- Whitelists are exact-match (set / dict membership), not prefix/regex unless the regex fully anchors with `re.fullmatch` and no character class permits leading `-`.
+- Flag-injection-prone values (e.g. `journalctl --since=`, `--grep=`) use the equals-form so the value can't be misparsed as a separate flag.
+- Positional/glob args (find name, systemctl_list pattern, df paths) go after `--`.
+- Never add raw flag passthrough to a tool. `ps` uses preset modes only.
+
+### Validators
+
+Shared validators live in `validate.py` (`validate_host`, `validate_path`, `validate_grep_pattern`, `validate_grep_flags`, `validate_find_args`, `validate_offset_length`, `validate_unit_name`, `validate_lines_int`, `binary_length_cap`). Tool-specific validators live in the tool module.
+
+`validate_unit_name` uses `re.fullmatch` (Python `$` matches before trailing `\n` with `.match()`; bug-prone). All new validators should follow that pattern.
+
+### Logging
+
+JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FILE` is unset.
+
+- Central timing points: `run_ssh` (SSH-call) and `_call_tool` (tool-call). Per-tool handlers do not log.
+- Custom level `TRACE = 5` for full I/O dumps. Default `LINUX_INFO_LOG_LEVEL=INFO`.
+- Every log line during a tool call automatically carries `tool` and `request_id` fields via a `ContextVar`-backed `logging.Filter`. Don't manually pass `tool=name` in `extra=`.
+- INFO `tool_call` fields: `tool`, `host`, `duration_ms`, `exit_code`, `outcome`. INFO `ssh_call` fields: `host`, `exit_code`, `duration_ms`, `stdout_bytes`, `stderr_bytes`, `truncated`, `outcome`. See SPEC.md §Logging for the full table.
+- `SshResult.duration_ms` is also returned to callers.
+
+### Tests
+
+- `pytest`. Add tests for any new validator, builder, handler, or log event.
+- Mock `run_ssh` at the module-import site (e.g. `monkeypatch.setattr(linux_info_mcp.tools.files, "run_ssh", fake)`), not at `linux_info_mcp.ssh`.
+- For SSH-layer tests, monkeypatch `subprocess.run` to a fake that returns / raises as needed.
+- Adversarial inputs required: real injection strings (e.g. `-oProxyCommand=evil`, `foo;rm -rf /`, `\n`, `\x00`), not just nice inputs.
+- New module + handler must include at least one truncation-propagation test (`SshResult(..., truncated=True)` → handler returns `truncated: True`).
+- Tests must run from a clean checkout via `uv sync && uv run pytest -q`.
+
+### Style
+
+- Default: no comments. Add only when WHY is non-obvious.
+- One-line module docstring max. One-line per public function. No multi-paragraph docstrings.
+- Reference code with `file_path:line_number`.
+- Short, factual responses. No filler.
+
+## Adding a new tool — checklist
+
+1. Read SPEC.md to find the section for the tool (or add one).
+2. Decide: does it fit an existing module (`tools/perf.py` for system perf, `tools/systemctl.py` for systemd, etc.) or warrant a new one?
+3. Implement validators (tool-local, in the same module).
+4. Implement `build_remote_cmd_<tool>` returning a single shell-quoted string with `LC_ALL=C` prefix.
+5. Implement `handle_<tool>` returning `{stdout, stderr, exit_code, truncated}`.
+6. Define `<TOOL>_SCHEMA` JSON Schema.
+7. Append to module's `TOOLS` list.
+8. Tests under `tests/tools/test_<area>.py`. Cover defaults, every flag, mutual-exclusions, whitelist rejections, injection attempts, truncation propagation.
+9. Update SPEC.md, README.md tool list if user-visible, and AGENTS.md tool count at top.
+10. `uv run pytest -q` must stay green.
+
+## Configuration env vars (current)
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `LINUX_INFO_SSH_CMD` | `ssh` | Argv prefix; parsed with `shlex.split`. |
+| `LINUX_INFO_HOSTS` | (empty) | Comma-list host allowlist; empty = any. |
+| `LINUX_INFO_TIMEOUT` | `30` | Seconds, subprocess timeout. |
+| `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap on stdout and stderr. |
+| `LINUX_INFO_LOG_FILE` | (empty) | JSONL log path; unset = logging disabled. |
+| `LINUX_INFO_LOG_LEVEL` | `INFO` | TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL. |
+
+## Key file pointers
+
+- Tool registration contract: `linux_info_mcp/tools/__init__.py:8`
+- Auto-discovery: `linux_info_mcp/server.py:_discover_tools`
+- Central SSH wrapper + timing: `linux_info_mcp/ssh.py:run_ssh`
+- Logging setup + ContextVar filter: `linux_info_mcp/log.py:setup_logging`
+- Shared validators: `linux_info_mcp/validate.py`
+- Spec sections per tool: SPEC.md §1–§11

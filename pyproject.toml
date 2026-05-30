@@ -1,0 +1,28 @@
+[project]
+name = "linux-info-mcp"
+version = "0.1.0"
+description = "MCP server for read-only remote diagnostics over SSH"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+linux-info-mcp = "linux_info_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["linux_info_mcp"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
