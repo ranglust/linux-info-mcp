@@ -111,6 +111,10 @@ Tool handlers are sync (they call blocking `subprocess.run` for `ssh`). The asyn
 - One-shot response per call. No streaming; stdout is capped at `LINUX_INFO_MAX_BYTES` and `truncated: true` is set when the cap is hit.
 - SSH authentication is delegated to the user's ssh config / agent. This server never handles credentials.
 
+## Security
+
+See [`SECURITY.md`](./SECURITY.md) for the vulnerability reporting policy and threat model.
+
 ## License
 
 MIT. See [`LICENSE`](./LICENSE).
