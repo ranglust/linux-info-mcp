@@ -2,7 +2,7 @@
 
 ![tests](https://github.com/ranglust/linux-info-mcp/actions/workflows/tests.yml/badge.svg)
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. 43 tools across 12 modules:
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. 44 tools across 12 modules:
 
 - files: `read_file`, `find_files`, `read_binary`
 - systemd: `systemctl_status`, `systemctl_list`, `journalctl`
@@ -15,7 +15,7 @@ MCP server that runs read-only diagnostic commands on remote hosts via SSH. 43 t
 - sys: `uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`
 - time: `chronyc`, `timedatectl`
 - fs: `mount`, `findmnt`, `stat_fs`
-- docker: `docker_ps`, `docker_inspect`, `docker_images`
+- docker: `docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`
 
 ## Project context for agents
 

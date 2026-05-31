@@ -343,7 +343,168 @@ def test_images_truncation_propagates(monkeypatch):
 
 def test_tools_registered():
     names = [t.name for t in mod.TOOLS]
-    assert names == ["docker_ps", "docker_inspect", "docker_images"]
+    assert names == ["docker_ps", "docker_inspect", "docker_images", "docker_logs"]
     for t in mod.TOOLS:
         assert t.input_schema["type"] == "object"
         assert "host" in t.input_schema["required"]
+
+
+# ---------------------------------------------------------------------------
+# docker_logs
+# ---------------------------------------------------------------------------
+
+
+def test_logs_default_builder():
+    cmd = mod.build_remote_cmd_docker_logs(container="web")
+    assert cmd == "LC_ALL=C docker logs --tail 100 -- web"
+
+
+def test_logs_all_flags_builder():
+    cmd = mod.build_remote_cmd_docker_logs(
+        container="web",
+        tail=50,
+        since="42m",
+        until="2026-01-01T00:00:00Z",
+        timestamps=True,
+    )
+    assert cmd == (
+        "LC_ALL=C docker logs --tail 50 --since=42m "
+        "--until=2026-01-01T00:00:00Z --timestamps -- web"
+    )
+
+
+def test_logs_with_grep():
+    cmd = mod.build_remote_cmd_docker_logs(
+        container="web", grep_pattern="ERROR", grep_flags=["-i", "-n"]
+    )
+    assert cmd == (
+        "LC_ALL=C docker logs --tail 100 -- web 2>&1 | grep -i -n -- ERROR"
+    )
+
+
+def test_logs_with_grep_no_flags():
+    cmd = mod.build_remote_cmd_docker_logs(container="web", grep_pattern="oops")
+    assert cmd == "LC_ALL=C docker logs --tail 100 -- web 2>&1 | grep -- oops"
+
+
+def test_logs_handler_happy(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"line1\n", b"", 0, False))
+    out = mod.handle_docker_logs({"host": "h1", "container": "web"})
+    assert out == {"stdout": "line1\n", "stderr": "", "exit_code": 0, "truncated": False}
+    assert captured["host"] == "h1"
+    assert captured["cmd"] == "LC_ALL=C docker logs --tail 100 -- web"
+
+
+def test_logs_handler_with_all_args(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_docker_logs({
+        "host": "h1",
+        "container": "web",
+        "tail": 200,
+        "since": "1h",
+        "until": "30m",
+        "timestamps": True,
+        "grep_pattern": "panic",
+        "grep_flags": ["-i"],
+    })
+    assert captured["cmd"] == (
+        "LC_ALL=C docker logs --tail 200 --since=1h --until=30m "
+        "--timestamps -- web 2>&1 | grep -i -- panic"
+    )
+
+
+def test_logs_handler_rejects_missing_container(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1"})
+
+
+def test_logs_handler_rejects_container_leading_dash(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1", "container": "-rf"})
+
+
+def test_logs_handler_rejects_container_with_semicolon(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1", "container": "web;rm -rf /"})
+
+
+def test_logs_handler_rejects_container_with_newline(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1", "container": "web\nfoo"})
+
+
+def test_logs_handler_rejects_container_with_nul(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1", "container": "web\x00"})
+
+
+def test_logs_handler_rejects_tail_too_high(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1", "container": "web", "tail": 100000})
+
+
+def test_logs_handler_rejects_tail_zero(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1", "container": "web", "tail": 0})
+
+
+def test_logs_handler_rejects_since_with_newline(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1", "container": "web", "since": "1h\n"})
+
+
+def test_logs_handler_rejects_grep_flags_without_pattern(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "h1", "container": "web", "grep_flags": ["-i"]})
+
+
+def test_logs_handler_rejects_bad_grep_flag(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({
+            "host": "h1",
+            "container": "web",
+            "grep_pattern": "x",
+            "grep_flags": ["--include=evil"],
+        })
+
+
+def test_logs_handler_rejects_grep_pattern_with_newline(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({
+            "host": "h1",
+            "container": "web",
+            "grep_pattern": "foo\nbar",
+        })
+
+
+def test_logs_handler_rejects_non_bool_timestamps(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({
+            "host": "h1",
+            "container": "web",
+            "timestamps": "yes",
+        })
+
+
+def test_logs_handler_rejects_bad_host(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_docker_logs({"host": "-evil", "container": "web"})
+
+
+def test_logs_truncation_propagates(monkeypatch):
+    _stub(monkeypatch, SshResult(b"x" * 10, b"", 0, True))
+    out = mod.handle_docker_logs({"host": "h1", "container": "web"})
+    assert out["truncated"] is True

@@ -5,7 +5,13 @@ import re
 import shlex
 
 from ..ssh import run_ssh
-from ..validate import _reject_unsafe_chars, validate_host, validate_lines_int
+from ..validate import (
+    _reject_unsafe_chars,
+    validate_grep_flags,
+    validate_grep_pattern,
+    validate_host,
+    validate_lines_int,
+)
 from . import ToolSpec
 
 
@@ -346,6 +352,102 @@ DOCKER_IMAGES_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
+# docker_logs
+# ---------------------------------------------------------------------------
+
+
+def _validate_logs_time(s, label: str) -> str:
+    if not isinstance(s, str) or not s:
+        raise ValueError(f"{label} must be a non-empty string")
+    _reject_unsafe_chars(s, label)
+    if len(s) > 128:
+        raise ValueError(f"{label} must be at most 128 characters")
+    return s
+
+
+def build_remote_cmd_docker_logs(
+    *,
+    container: str,
+    tail: int = 100,
+    since: str | None = None,
+    until: str | None = None,
+    timestamps: bool = False,
+    grep_pattern: str | None = None,
+    grep_flags: list[str] | None = None,
+) -> str:
+    """Build LC_ALL=C docker logs command string."""
+    parts = ["LC_ALL=C", "docker", "logs", "--tail", shlex.quote(str(tail))]
+    if since is not None:
+        parts.append(f"--since={shlex.quote(since)}")
+    if until is not None:
+        parts.append(f"--until={shlex.quote(until)}")
+    if timestamps:
+        parts.append("--timestamps")
+    parts += ["--", shlex.quote(container)]
+    cmd = " ".join(parts)
+    if grep_pattern is not None:
+        grep_parts = ["2>&1", "|", "grep"]
+        for f in grep_flags or []:
+            grep_parts.append(shlex.quote(f))
+        grep_parts += ["--", shlex.quote(grep_pattern)]
+        cmd += " " + " ".join(grep_parts)
+    return cmd
+
+
+def handle_docker_logs(args: dict) -> dict:
+    host = validate_host(args["host"])
+    container = _validate_ref(args.get("container"), "container")
+    tail_in = args.get("tail")
+    tail = (
+        100
+        if tail_in is None
+        else validate_lines_int(tail_in, lo=1, hi=10000, label="tail")
+    )
+    since_in = args.get("since")
+    since = _validate_logs_time(since_in, "since") if since_in is not None else None
+    until_in = args.get("until")
+    until = _validate_logs_time(until_in, "until") if until_in is not None else None
+    timestamps = _bool(args.get("timestamps"), "timestamps")
+    grep_in = args.get("grep_pattern")
+    grep_pattern = validate_grep_pattern(grep_in) if grep_in is not None else None
+    grep_flags = validate_grep_flags(args.get("grep_flags"))
+    if grep_pattern is None and grep_flags:
+        raise ValueError("grep_flags requires grep_pattern")
+    cmd = build_remote_cmd_docker_logs(
+        container=container,
+        tail=tail,
+        since=since,
+        until=until,
+        timestamps=timestamps,
+        grep_pattern=grep_pattern,
+        grep_flags=grep_flags,
+    )
+    res = run_ssh(host, cmd)
+    return {
+        "stdout": _decode_text(res.stdout),
+        "stderr": _decode_text(res.stderr),
+        "exit_code": res.exit_code,
+        "truncated": res.truncated,
+    }
+
+
+DOCKER_LOGS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "host": {"type": "string"},
+        "container": {"type": "string"},
+        "tail": {"type": ["integer", "null"]},
+        "since": {"type": ["string", "null"]},
+        "until": {"type": ["string", "null"]},
+        "timestamps": {"type": ["boolean", "null"]},
+        "grep_pattern": {"type": ["string", "null"]},
+        "grep_flags": {"type": ["array", "null"], "items": {"type": "string"}},
+    },
+    "required": ["host", "container"],
+}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -376,5 +478,14 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=DOCKER_IMAGES_SCHEMA,
         handler=handle_docker_images,
+    ),
+    ToolSpec(
+        name="docker_logs",
+        description=(
+            "Tail Docker container logs on a remote host via SSH (read-only). "
+            "Returns stdout, stderr, exit_code, truncated."
+        ),
+        input_schema=DOCKER_LOGS_SCHEMA,
+        handler=handle_docker_logs,
     ),
 ]

@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 43 tools across 12 modules (files, systemd, journalctl, perf, net, proc, disk, kernel, pkg, sys, time, fs, docker).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 44 tools across 12 modules (files, systemd, journalctl, perf, net, proc, disk, kernel, pkg, sys, time, fs, docker).
 
 ## Goals & Non-Goals
 
@@ -607,6 +607,26 @@ MCP server that runs read-only diagnostic commands on remote hosts via SSH. Expo
 
 **Returns** `{stdout, stderr, exit_code, truncated}`.
 
+### 44. `docker_logs`
+
+Tail a container's stdout+stderr log on a remote host. Read-only.
+
+**Args**
+- `host: str` — required. Same rules as everywhere else.
+- `container: str` — required. Container name or ID. Regex `^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,255}$`, no leading `-`.
+- `tail: int | None` — `--tail N`. Default `100`. Range `[1, 10000]`.
+- `since: str | None` — `--since=<value>`. Free-form (Docker accepts duration like `42m`, RFC3339, Unix ts). NUL/newline rejected, max 128 chars.
+- `until: str | None` — `--until=<value>`. Same constraints as `since`.
+- `timestamps: bool | None` — `--timestamps`. Default `false`.
+- `grep_pattern: str | None` — when set, output piped to `grep -- <pattern>`. NUL/newline rejected.
+- `grep_flags: list[str] | None` — same whitelist as `read_file.grep_flags`. Requires `grep_pattern`; rejected otherwise.
+
+**Behavior**
+- Remote command: `docker logs --tail <N> [--since=<v>] [--until=<v>] [--timestamps] -- <container>` followed by `2>&1 | grep [<flags>] -- <pattern>` when `grep_pattern` is set. The `2>&1` merge is required because Docker writes container stderr to its own stderr stream; merging is the only way `grep` can filter both. Side-effect: server-side stdout/stderr split is collapsed when grep is in use.
+- Default `tail=100` keeps responses small; long-running containers can produce GBs.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
 ## Configuration (environment variables)
 
 | Var | Default | Meaning |
@@ -655,7 +675,7 @@ linux-info-mcp/
       sys.py                 # ToolSpec list: uptime, who, last, lscpu, lsmem, dmidecode
       time.py                # ToolSpec list: chronyc, timedatectl
       fs.py                  # ToolSpec list: mount, findmnt, stat_fs
-      docker.py              # ToolSpec list: docker_ps, docker_inspect, docker_images
+      docker.py              # ToolSpec list: docker_ps, docker_inspect, docker_images, docker_logs
   tests/
     test_validate.py
     test_ssh.py
