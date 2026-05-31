@@ -3,6 +3,11 @@ name = "linux-info-mcp"
 version = "0.1.0"
 description = "MCP server for read-only remote diagnostics over SSH"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Ronen Angluster", email = "ronen.angluster@coinbase.com"},
+]
 dependencies = [
     "mcp",
 ]
