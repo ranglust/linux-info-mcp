@@ -1,6 +1,7 @@
 # linux-info-mcp
 
 ![tests](https://github.com/ranglust/linux-info-mcp/actions/workflows/tests.yml/badge.svg)
+[![codecov](https://codecov.io/gh/ranglust/linux-info-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/ranglust/linux-info-mcp)
 
 MCP server that runs read-only diagnostic commands on remote hosts via SSH. 44 tools across 12 modules:
 
