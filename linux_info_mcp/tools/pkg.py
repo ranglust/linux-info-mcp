@@ -1,4 +1,5 @@
 """Package query tools: dpkg_list, rpm_list, apt_list_installed."""
+
 from __future__ import annotations
 
 import re
@@ -7,7 +8,6 @@ import shlex
 from ..ssh import run_ssh
 from ..validate import _reject_unsafe_chars, validate_host
 from . import ToolSpec
-
 
 _PKG_PATTERN_RE = re.compile(r"^[A-Za-z0-9._*?+-]{1,128}$")
 
@@ -31,9 +31,7 @@ def _validate_pkg_pattern(pattern) -> str:
     if pattern.startswith("-"):
         raise ValueError("pattern must not start with '-'")
     if not _PKG_PATTERN_RE.fullmatch(pattern):
-        raise ValueError(
-            "pattern must match ^[A-Za-z0-9._*?+-]{1,128}$"
-        )
+        raise ValueError("pattern must match ^[A-Za-z0-9._*?+-]{1,128}$")
     return pattern
 
 

@@ -1,4 +1,5 @@
 """Systemctl tools: systemctl_status, systemctl_list."""
+
 from __future__ import annotations
 
 import re
@@ -7,6 +8,8 @@ import shlex
 from ..ssh import run_ssh
 from ..validate import (
     _reject_unsafe_chars as _reject_unsafe,
+)
+from ..validate import (
     validate_host,
     validate_lines_int,
     validate_unit_name,
@@ -15,8 +18,17 @@ from . import ToolSpec
 
 _KIND_WHITELIST = {"units", "unit-files"}
 _UNIT_TYPE_WHITELIST = {
-    "service", "timer", "socket", "target", "mount", "path",
-    "slice", "scope", "device", "automount", "swap",
+    "service",
+    "timer",
+    "socket",
+    "target",
+    "mount",
+    "path",
+    "slice",
+    "scope",
+    "device",
+    "automount",
+    "swap",
 }
 _STATE_RE = re.compile(r"^[a-z][a-z-]*$")
 

@@ -1,4 +1,5 @@
 """Net tools: ss, ip_addr, ip_route, lsof_net."""
+
 from __future__ import annotations
 
 import re
@@ -26,9 +27,22 @@ def _bool(value, label: str) -> bool:
 # ---------------------------------------------------------------------------
 
 _SS_STATE_WHITELIST = {
-    "established", "syn-sent", "syn-recv", "fin-wait-1", "fin-wait-2",
-    "time-wait", "close", "close-wait", "last-ack", "listening", "closing",
-    "all", "connected", "synchronized", "bucket", "big",
+    "established",
+    "syn-sent",
+    "syn-recv",
+    "fin-wait-1",
+    "fin-wait-2",
+    "time-wait",
+    "close",
+    "close-wait",
+    "last-ack",
+    "listening",
+    "closing",
+    "all",
+    "connected",
+    "synchronized",
+    "bucket",
+    "big",
 }
 
 _SS_FAMILY_WHITELIST = {"inet", "inet6", "unix"}

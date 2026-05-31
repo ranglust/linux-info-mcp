@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.net as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -39,9 +39,7 @@ def test_ss_all_flags_builder():
         family="inet",
         state="established",
     )
-    assert cmd == (
-        "LC_ALL=C ss -t -u -l -a -n -p -e -s -m -f inet state established"
-    )
+    assert cmd == ("LC_ALL=C ss -t -u -l -a -n -p -e -s -m -f inet state established")
 
 
 def test_ss_handler_default(monkeypatch):

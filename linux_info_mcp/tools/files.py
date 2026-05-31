@@ -1,4 +1,5 @@
 """File tools: read_file, find_files, read_binary."""
+
 from __future__ import annotations
 
 import base64
@@ -69,9 +70,7 @@ def handle_find_files(args: dict) -> dict:
 def handle_read_binary(args: dict) -> dict:
     host = validate_host(args["host"])
     path = validate_path(args["path"])
-    offset, length = validate_offset_length(
-        args["offset"], args["length"], ssh_mod.max_bytes()
-    )
+    offset, length = validate_offset_length(args["offset"], args["length"], ssh_mod.max_bytes())
     cmd = build_remote_cmd_binary(path, offset, length)
     res = run_ssh(host, cmd)
     raw = res.stdout

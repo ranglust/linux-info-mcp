@@ -1,7 +1,5 @@
 import subprocess
 
-import pytest
-
 from linux_info_mcp import ssh as ssh_mod
 
 
@@ -62,6 +60,7 @@ def test_build_binary():
 
 # run_ssh
 
+
 class _FakeProc:
     def __init__(self, stdout=b"", stderr=b"", returncode=0):
         self.stdout = stdout
@@ -82,7 +81,14 @@ def test_run_ssh_argv_shape(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
     res = ssh_mod.run_ssh("host1", "echo hi")
     assert captured["argv"] == [
-        "ssh", "-F", "/tmp/cfg", "-o", "ConnectTimeout=5", "host1", "--", "echo hi",
+        "ssh",
+        "-F",
+        "/tmp/cfg",
+        "-o",
+        "ConnectTimeout=5",
+        "host1",
+        "--",
+        "echo hi",
     ]
     assert captured["kwargs"]["shell"] is False
     assert captured["kwargs"]["capture_output"] is True
@@ -145,9 +151,7 @@ def test_run_ssh_timeout(monkeypatch):
     monkeypatch.setenv("LINUX_INFO_TIMEOUT", "1")
 
     def fake_run(argv, **kwargs):
-        raise subprocess.TimeoutExpired(
-            cmd=argv, timeout=1.0, output=b"partial", stderr=b"stuck"
-        )
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=1.0, output=b"partial", stderr=b"stuck")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     res = ssh_mod.run_ssh("h", "sleep 999")
@@ -162,9 +166,7 @@ def test_run_ssh_timeout_truncates_stdout(monkeypatch):
     monkeypatch.setenv("LINUX_INFO_MAX_BYTES", "5")
 
     def fake_run(argv, **kwargs):
-        raise subprocess.TimeoutExpired(
-            cmd=argv, timeout=1.0, output=b"x" * 100, stderr=b""
-        )
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=1.0, output=b"x" * 100, stderr=b"")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     res = ssh_mod.run_ssh("h", "sleep 999")

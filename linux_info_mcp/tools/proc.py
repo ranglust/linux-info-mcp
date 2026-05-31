@@ -1,4 +1,5 @@
 """Process tools: lsof, pgrep, pidof, top."""
+
 from __future__ import annotations
 
 import re
@@ -338,8 +339,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="lsof",
         description=(
-            "Run lsof on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run lsof on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=LSOF_SCHEMA,
         handler=handle_lsof,
@@ -347,8 +347,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="pgrep",
         description=(
-            "Run pgrep on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run pgrep on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=PGREP_SCHEMA,
         handler=handle_pgrep,
@@ -356,8 +355,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="pidof",
         description=(
-            "Run pidof on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run pidof on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=PIDOF_SCHEMA,
         handler=handle_pidof,

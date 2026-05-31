@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.kernel as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -119,9 +119,7 @@ def test_dmesg_handler_happy(monkeypatch):
         monkeypatch,
         SshResult(stdout=b"d\n", stderr=b"", exit_code=0, truncated=False),
     )
-    out = mod.handle_dmesg(
-        {"host": "h1", "time_iso": True, "level": "err", "tail_lines": 100}
-    )
+    out = mod.handle_dmesg({"host": "h1", "time_iso": True, "level": "err", "tail_lines": 100})
     assert out == {"stdout": "d\n", "stderr": "", "exit_code": 0, "truncated": False}
     assert captured["cmd"] == (
         "LC_ALL=C dmesg --no-pager --time-format=iso --level=err | tail -n 100"

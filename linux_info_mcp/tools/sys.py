@@ -1,4 +1,5 @@
 """System info tools: uptime, who, last, lscpu, lsmem, dmidecode."""
+
 from __future__ import annotations
 
 import re
@@ -183,9 +184,7 @@ def handle_last(args: dict) -> dict:
     host = validate_host(args["host"])
     lines_in = args.get("lines")
     lines = (
-        validate_lines_int(lines_in, lo=1, hi=1000, label="lines")
-        if lines_in is not None
-        else None
+        validate_lines_int(lines_in, lo=1, hi=1000, label="lines") if lines_in is not None else None
     )
     user_in = args.get("user")
     user = _validate_last_user(user_in) if user_in is not None else None
@@ -383,8 +382,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="uptime",
         description=(
-            "Run uptime on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run uptime on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=UPTIME_SCHEMA,
         handler=handle_uptime,
@@ -392,8 +390,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="who",
         description=(
-            "Run who on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run who on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=WHO_SCHEMA,
         handler=handle_who,
@@ -410,8 +407,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="lscpu",
         description=(
-            "Run lscpu on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run lscpu on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=LSCPU_SCHEMA,
         handler=handle_lscpu,
@@ -419,8 +415,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="lsmem",
         description=(
-            "Run lsmem on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run lsmem on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=LSMEM_SCHEMA,
         handler=handle_lsmem,

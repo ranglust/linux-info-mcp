@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.perf as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -146,9 +146,7 @@ def test_free_default_builder():
 
 
 def test_free_all_flags_builder():
-    cmd = mod.build_remote_cmd_free(
-        unit_flag="-h", wide=True, total=True, interval=5, count=3
-    )
+    cmd = mod.build_remote_cmd_free(unit_flag="-h", wide=True, total=True, interval=5, count=3)
     assert cmd == "LC_ALL=C free -h -w -t -s 5 -c 3"
 
 
@@ -198,9 +196,7 @@ def test_df_all_flags_builder():
         exclude_type=["tmpfs", "devtmpfs"],
         paths=["/", "/var"],
     )
-    assert cmd == (
-        "LC_ALL=C df -h -i -l -T -B 1K -x tmpfs -x devtmpfs -- / /var"
-    )
+    assert cmd == ("LC_ALL=C df -h -i -l -T -B 1K -x tmpfs -x devtmpfs -- / /var")
 
 
 def test_df_handler_rejects_bad_block_size(monkeypatch):

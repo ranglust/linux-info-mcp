@@ -1,4 +1,5 @@
 """Kernel tools: dmesg, uname, sysctl."""
+
 from __future__ import annotations
 
 import re
@@ -264,8 +265,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="dmesg",
         description=(
-            "Run dmesg on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run dmesg on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=DMESG_SCHEMA,
         handler=handle_dmesg,

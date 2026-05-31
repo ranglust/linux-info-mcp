@@ -1,13 +1,14 @@
 """JSON file logging. Disabled unless LINUX_INFO_LOG_FILE is set."""
+
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 
 _call_ctx: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "linux_info_mcp_call_ctx", default=None
@@ -40,6 +41,7 @@ class _CtxFilter(logging.Filter):
                     setattr(record, k, v)
         return True
 
+
 TRACE = 5
 logging.addLevelName(TRACE, "TRACE")
 
@@ -62,17 +64,36 @@ _LEVEL_MAP = {
 }
 
 _STD_LOGRECORD_KEYS = {
-    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-    "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-    "created", "msecs", "relativeCreated", "thread", "threadName",
-    "processName", "process", "message", "asctime", "taskName",
+    "name",
+    "msg",
+    "args",
+    "levelname",
+    "levelno",
+    "pathname",
+    "filename",
+    "module",
+    "exc_info",
+    "exc_text",
+    "stack_info",
+    "lineno",
+    "funcName",
+    "created",
+    "msecs",
+    "relativeCreated",
+    "thread",
+    "threadName",
+    "processName",
+    "process",
+    "message",
+    "asctime",
+    "taskName",
 }
 
 
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         d = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "msg": record.getMessage(),
@@ -127,8 +148,6 @@ def reset_for_tests() -> None:
     root = logging.getLogger("linux_info_mcp")
     for h in list(root.handlers):
         root.removeHandler(h)
-        try:
+        with contextlib.suppress(Exception):
             h.close()
-        except Exception:
-            pass
     root.setLevel(logging.WARNING)

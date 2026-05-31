@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.time as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -22,10 +22,7 @@ def _stub(monkeypatch, result):
 
 
 def test_chronyc_default_builder():
-    assert (
-        mod.build_remote_cmd_chronyc(subcommand="tracking")
-        == "LC_ALL=C chronyc -n tracking"
-    )
+    assert mod.build_remote_cmd_chronyc(subcommand="tracking") == "LC_ALL=C chronyc -n tracking"
 
 
 @pytest.mark.parametrize(
@@ -121,8 +118,7 @@ def test_chronyc_truncated_propagates(monkeypatch):
 
 def test_timedatectl_default_builder():
     assert (
-        mod.build_remote_cmd_timedatectl(mode="status")
-        == "LC_ALL=C timedatectl --no-pager status"
+        mod.build_remote_cmd_timedatectl(mode="status") == "LC_ALL=C timedatectl --no-pager status"
     )
 
 

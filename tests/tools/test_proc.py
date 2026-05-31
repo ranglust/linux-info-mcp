@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.proc as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -222,9 +222,7 @@ def test_pgrep_handler_rejects_bad_parent_pid(monkeypatch):
 def test_pgrep_handler_rejects_newest_and_oldest(monkeypatch):
     _stub(monkeypatch, SshResult(b"", b"", 0, False))
     with pytest.raises(ValueError):
-        mod.handle_pgrep(
-            {"host": "h1", "pattern": "x", "newest": True, "oldest": True}
-        )
+        mod.handle_pgrep({"host": "h1", "pattern": "x", "newest": True, "oldest": True})
 
 
 def test_pgrep_handler_rejects_bad_list_name(monkeypatch):
@@ -254,10 +252,7 @@ def test_pgrep_handler_happy(monkeypatch):
         "exit_code": 0,
         "truncated": False,
     }
-    assert (
-        captured["cmd"]
-        == "LC_ALL=C pgrep -f -x -l -u root -P 1 -- sshd"
-    )
+    assert captured["cmd"] == "LC_ALL=C pgrep -f -x -l -u root -P 1 -- sshd"
 
 
 def test_pgrep_truncated_propagates(monkeypatch):

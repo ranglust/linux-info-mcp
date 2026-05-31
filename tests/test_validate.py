@@ -10,8 +10,8 @@ from linux_info_mcp.validate import (
     validate_path,
 )
 
-
 # host
+
 
 def test_host_basic():
     assert validate_host("server01.example.com") == "server01.example.com"
@@ -60,6 +60,7 @@ def test_host_empty_allowlist_allows_anything(monkeypatch):
 
 # path
 
+
 def test_path_basic():
     assert validate_path("/etc/hosts") == "/etc/hosts"
 
@@ -81,6 +82,7 @@ def test_path_rejects_empty():
 
 # grep
 
+
 def test_grep_pattern_ok():
     assert validate_grep_pattern("foo.*bar") == "foo.*bar"
 
@@ -101,7 +103,12 @@ def test_grep_flags_none():
 
 def test_grep_flags_basic_whitelist():
     assert validate_grep_flags(["-i", "-E", "-v", "-n", "-w", "-F"]) == [
-        "-i", "-E", "-v", "-n", "-w", "-F",
+        "-i",
+        "-E",
+        "-v",
+        "-n",
+        "-w",
+        "-F",
     ]
 
 
@@ -140,6 +147,7 @@ def test_grep_flags_rejects_non_string_entry():
 
 
 # find
+
 
 def test_find_empty():
     assert validate_find_args() == {}
@@ -214,6 +222,7 @@ def test_find_path_glob_rejects_newline():
 
 
 # offset/length
+
 
 def test_offset_length_ok():
     assert validate_offset_length(0, 100, 1024) == (0, 100)

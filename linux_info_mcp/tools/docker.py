@@ -1,4 +1,5 @@
 """Docker tools: docker_ps, docker_inspect, docker_images."""
+
 from __future__ import annotations
 
 import re
@@ -76,9 +77,20 @@ def _validate_filters(filters, allowed_keys: set[str]) -> list[tuple[str, str]]:
 
 _PS_FORMAT_MAP = {"table": None, "json": "--format=json"}
 _PS_FILTER_KEYS = {
-    "ancestor", "before", "exited", "health", "id", "is-task",
-    "label", "name", "network", "publish", "expose", "since",
-    "status", "volume",
+    "ancestor",
+    "before",
+    "exited",
+    "health",
+    "id",
+    "is-task",
+    "label",
+    "name",
+    "network",
+    "publish",
+    "expose",
+    "since",
+    "status",
+    "volume",
 }
 
 
@@ -176,8 +188,15 @@ DOCKER_PS_SCHEMA = {
 # ---------------------------------------------------------------------------
 
 _INSPECT_TYPES = {
-    "container", "image", "network", "volume",
-    "service", "node", "plugin", "secret", "task",
+    "container",
+    "image",
+    "network",
+    "volume",
+    "service",
+    "node",
+    "plugin",
+    "secret",
+    "task",
 }
 _INSPECT_FORMAT_MAP = {
     "json": None,
@@ -398,11 +417,7 @@ def handle_docker_logs(args: dict) -> dict:
     host = validate_host(args["host"])
     container = _validate_ref(args.get("container"), "container")
     tail_in = args.get("tail")
-    tail = (
-        100
-        if tail_in is None
-        else validate_lines_int(tail_in, lo=1, hi=10000, label="tail")
-    )
+    tail = 100 if tail_in is None else validate_lines_int(tail_in, lo=1, hi=10000, label="tail")
     since_in = args.get("since")
     since = _validate_logs_time(since_in, "since") if since_in is not None else None
     until_in = args.get("until")

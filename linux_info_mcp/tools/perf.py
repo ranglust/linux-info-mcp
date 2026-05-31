@@ -1,4 +1,5 @@
 """Perf tools: iostat, vmstat, free, df, ps."""
+
 from __future__ import annotations
 
 import re
@@ -529,8 +530,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="iostat",
         description=(
-            "Run iostat on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run iostat on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=IOSTAT_SCHEMA,
         handler=handle_iostat,
@@ -538,8 +538,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="vmstat",
         description=(
-            "Run vmstat on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run vmstat on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=VMSTAT_SCHEMA,
         handler=handle_vmstat,
@@ -547,8 +546,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="free",
         description=(
-            "Run free on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run free on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=FREE_SCHEMA,
         handler=handle_free,
@@ -556,8 +554,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="df",
         description=(
-            "Run df on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run df on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=DF_SCHEMA,
         handler=handle_df,

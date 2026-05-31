@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.pkg as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -208,10 +208,7 @@ def test_rpm_list_truncated_propagates(monkeypatch):
 
 
 def test_apt_list_installed_default_builder():
-    assert (
-        mod.build_remote_cmd_apt_list_installed()
-        == "LC_ALL=C apt list --installed"
-    )
+    assert mod.build_remote_cmd_apt_list_installed() == "LC_ALL=C apt list --installed"
 
 
 def test_apt_list_installed_with_pattern_builder():

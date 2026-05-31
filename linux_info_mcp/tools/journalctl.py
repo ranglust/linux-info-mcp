@@ -1,4 +1,5 @@
 """journalctl tool."""
+
 from __future__ import annotations
 
 import shlex
@@ -135,17 +136,13 @@ def handle_journalctl(args: dict) -> dict:
     """Validate args, run journalctl over SSH, return response dict."""
     host = validate_host(args["host"])
     lines_in = args.get("lines")
-    lines = 100 if lines_in is None else validate_lines_int(
-        lines_in, lo=1, hi=100000, label="lines"
+    lines = (
+        100 if lines_in is None else validate_lines_int(lines_in, lo=1, hi=100000, label="lines")
     )
     unit_in = args.get("unit")
     unit = validate_unit_name(unit_in) if unit_in is not None else None
     ident_in = args.get("identifier")
-    identifier = (
-        validate_unit_name(ident_in, label="identifier")
-        if ident_in is not None
-        else None
-    )
+    identifier = validate_unit_name(ident_in, label="identifier") if ident_in is not None else None
     prio_in = args.get("priority")
     priority = validate_priority(prio_in) if prio_in is not None else None
     boot_in = args.get("boot")
@@ -155,9 +152,7 @@ def handle_journalctl(args: dict) -> dict:
     until_in = args.get("until")
     until = validate_time_string(until_in, "until") if until_in is not None else None
     grep_in = args.get("grep_pattern")
-    grep_pattern = (
-        validate_grep_pattern_journal(grep_in) if grep_in is not None else None
-    )
+    grep_pattern = validate_grep_pattern_journal(grep_in) if grep_in is not None else None
     reverse_in = args.get("reverse")
     if reverse_in is not None and not isinstance(reverse_in, bool):
         raise ValueError("reverse must be a boolean")

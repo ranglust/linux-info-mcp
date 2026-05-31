@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.docker as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -27,7 +27,10 @@ def test_ps_default_builder():
 
 def test_ps_all_flags_builder():
     cmd = mod.build_remote_cmd_docker_ps(
-        all=True, size=True, quiet=True, no_trunc=True,
+        all=True,
+        size=True,
+        quiet=True,
+        no_trunc=True,
         format_flag="--format=json",
         filters=[("status", "running"), ("name", "web")],
     )
@@ -160,11 +163,12 @@ def test_inspect_multiple_targets():
 
 def test_inspect_with_type_and_format():
     cmd = mod.build_remote_cmd_docker_inspect(
-        targets=["c1"], type_="container", format_flag="--format={{.Id}}", size=True,
+        targets=["c1"],
+        type_="container",
+        format_flag="--format={{.Id}}",
+        size=True,
     )
-    assert cmd == (
-        "LC_ALL=C docker inspect --type=container --format={{.Id}} -s -- c1"
-    )
+    assert cmd == ("LC_ALL=C docker inspect --type=container --format={{.Id}} -s -- c1")
 
 
 def test_inspect_handler_happy(monkeypatch):
@@ -258,7 +262,10 @@ def test_images_default_builder():
 
 def test_images_all_flags_builder():
     cmd = mod.build_remote_cmd_docker_images(
-        all=True, digests=True, quiet=True, no_trunc=True,
+        all=True,
+        digests=True,
+        quiet=True,
+        no_trunc=True,
         format_flag="--format=json",
         filters=[("dangling", "true"), ("reference", "myrepo:*")],
         repository="alpine",
@@ -377,9 +384,7 @@ def test_logs_with_grep():
     cmd = mod.build_remote_cmd_docker_logs(
         container="web", grep_pattern="ERROR", grep_flags=["-i", "-n"]
     )
-    assert cmd == (
-        "LC_ALL=C docker logs --tail 100 -- web 2>&1 | grep -i -n -- ERROR"
-    )
+    assert cmd == ("LC_ALL=C docker logs --tail 100 -- web 2>&1 | grep -i -n -- ERROR")
 
 
 def test_logs_with_grep_no_flags():
@@ -397,16 +402,18 @@ def test_logs_handler_happy(monkeypatch):
 
 def test_logs_handler_with_all_args(monkeypatch):
     captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
-    mod.handle_docker_logs({
-        "host": "h1",
-        "container": "web",
-        "tail": 200,
-        "since": "1h",
-        "until": "30m",
-        "timestamps": True,
-        "grep_pattern": "panic",
-        "grep_flags": ["-i"],
-    })
+    mod.handle_docker_logs(
+        {
+            "host": "h1",
+            "container": "web",
+            "tail": 200,
+            "since": "1h",
+            "until": "30m",
+            "timestamps": True,
+            "grep_pattern": "panic",
+            "grep_flags": ["-i"],
+        }
+    )
     assert captured["cmd"] == (
         "LC_ALL=C docker logs --tail 200 --since=1h --until=30m "
         "--timestamps -- web 2>&1 | grep -i -- panic"
@@ -470,32 +477,38 @@ def test_logs_handler_rejects_grep_flags_without_pattern(monkeypatch):
 def test_logs_handler_rejects_bad_grep_flag(monkeypatch):
     _stub(monkeypatch, SshResult(b"", b"", 0, False))
     with pytest.raises(ValueError):
-        mod.handle_docker_logs({
-            "host": "h1",
-            "container": "web",
-            "grep_pattern": "x",
-            "grep_flags": ["--include=evil"],
-        })
+        mod.handle_docker_logs(
+            {
+                "host": "h1",
+                "container": "web",
+                "grep_pattern": "x",
+                "grep_flags": ["--include=evil"],
+            }
+        )
 
 
 def test_logs_handler_rejects_grep_pattern_with_newline(monkeypatch):
     _stub(monkeypatch, SshResult(b"", b"", 0, False))
     with pytest.raises(ValueError):
-        mod.handle_docker_logs({
-            "host": "h1",
-            "container": "web",
-            "grep_pattern": "foo\nbar",
-        })
+        mod.handle_docker_logs(
+            {
+                "host": "h1",
+                "container": "web",
+                "grep_pattern": "foo\nbar",
+            }
+        )
 
 
 def test_logs_handler_rejects_non_bool_timestamps(monkeypatch):
     _stub(monkeypatch, SshResult(b"", b"", 0, False))
     with pytest.raises(ValueError):
-        mod.handle_docker_logs({
-            "host": "h1",
-            "container": "web",
-            "timestamps": "yes",
-        })
+        mod.handle_docker_logs(
+            {
+                "host": "h1",
+                "container": "web",
+                "timestamps": "yes",
+            }
+        )
 
 
 def test_logs_handler_rejects_bad_host(monkeypatch):

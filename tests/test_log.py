@@ -142,12 +142,14 @@ def test_call_ctx_filter_injects_tool_and_request_id(monkeypatch, tmp_path):
 
 def test_pid_field_always_emitted(monkeypatch, tmp_path):
     import os
+
     p = tmp_path / "log.jsonl"
     monkeypatch.setenv("LINUX_INFO_LOG_FILE", str(p))
     setup_logging()
     log = get_logger("test")
     log.info("event_no_ctx")
     from linux_info_mcp.log import reset_call_ctx, set_call_ctx
+
     _, token = set_call_ctx("read_file")
     try:
         log.info("event_with_ctx")

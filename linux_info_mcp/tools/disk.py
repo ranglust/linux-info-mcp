@@ -1,4 +1,5 @@
 """Disk tools: du, lsblk, blkid, smartctl."""
+
 from __future__ import annotations
 
 import re
@@ -306,8 +307,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="du",
         description=(
-            "Run du on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run du on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=DU_SCHEMA,
         handler=handle_du,
@@ -315,8 +315,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="lsblk",
         description=(
-            "Run lsblk on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run lsblk on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=LSBLK_SCHEMA,
         handler=handle_lsblk,
@@ -324,8 +323,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="blkid",
         description=(
-            "Run blkid on a remote host via SSH. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Run blkid on a remote host via SSH. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=BLKID_SCHEMA,
         handler=handle_blkid,

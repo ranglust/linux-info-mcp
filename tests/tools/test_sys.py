@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.sys as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -87,9 +87,7 @@ def test_who_default_builder():
 
 
 def test_who_all_flags_builder():
-    cmd = mod.build_remote_cmd_who(
-        all=True, boot=True, login=True, runlevel=True, users=True
-    )
+    cmd = mod.build_remote_cmd_who(all=True, boot=True, login=True, runlevel=True, users=True)
     assert cmd == "LC_ALL=C who -a -b -l -r -q"
 
 
@@ -202,9 +200,7 @@ def test_last_handler_happy(monkeypatch):
         monkeypatch,
         SshResult(stdout=b"l\n", stderr=b"", exit_code=0, truncated=False),
     )
-    out = mod.handle_last(
-        {"host": "h1", "lines": 5, "user": "root", "tty": "pts/0"}
-    )
+    out = mod.handle_last({"host": "h1", "lines": 5, "user": "root", "tty": "pts/0"})
     assert out["stdout"] == "l\n"
     assert captured["cmd"] == "LC_ALL=C last -n 5 -- root pts/0"
 
@@ -289,10 +285,7 @@ def test_lsmem_bytes_builder():
 
 
 def test_lsmem_summary_and_bytes_builder():
-    assert (
-        mod.build_remote_cmd_lsmem(summary=True, bytes=True)
-        == "LC_ALL=C lsmem -s only -b"
-    )
+    assert mod.build_remote_cmd_lsmem(summary=True, bytes=True) == "LC_ALL=C lsmem -s only -b"
 
 
 def test_lsmem_rejects_json_and_summary():

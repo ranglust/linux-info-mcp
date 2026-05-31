@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.disk as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -35,9 +35,7 @@ def test_du_all_flags_builder():
         one_filesystem=True,
         threshold="100M",
     )
-    assert cmd == (
-        "LC_ALL=C du -h -s --max-depth=2 --apparent-size -x -t 100M -- /var/log"
-    )
+    assert cmd == ("LC_ALL=C du -h -s --max-depth=2 --apparent-size -x -t 100M -- /var/log")
 
 
 def test_du_threshold_negative():
@@ -228,10 +226,7 @@ def test_blkid_default_builder():
 
 
 def test_blkid_with_device_builder():
-    assert (
-        mod.build_remote_cmd_blkid(device="/dev/sda1")
-        == "LC_ALL=C blkid -- /dev/sda1"
-    )
+    assert mod.build_remote_cmd_blkid(device="/dev/sda1") == "LC_ALL=C blkid -- /dev/sda1"
 
 
 def test_blkid_probe_with_device_builder():
@@ -347,32 +342,24 @@ def test_smartctl_rejects_missing_mode(monkeypatch):
 def test_smartctl_rejects_device_with_newline(monkeypatch):
     _stub(monkeypatch, SshResult(b"", b"", 0, False))
     with pytest.raises(ValueError):
-        mod.handle_smartctl(
-            {"host": "h1", "device": "/dev/sda\nfoo", "mode": "info"}
-        )
+        mod.handle_smartctl({"host": "h1", "device": "/dev/sda\nfoo", "mode": "info"})
 
 
 def test_smartctl_rejects_device_with_nul(monkeypatch):
     _stub(monkeypatch, SshResult(b"", b"", 0, False))
     with pytest.raises(ValueError):
-        mod.handle_smartctl(
-            {"host": "h1", "device": "/dev/sda\x00", "mode": "info"}
-        )
+        mod.handle_smartctl({"host": "h1", "device": "/dev/sda\x00", "mode": "info"})
 
 
 def test_smartctl_handler_quotes_injection(monkeypatch):
     captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
-    mod.handle_smartctl(
-        {"host": "h1", "device": "/dev/sda; rm -rf /", "mode": "info"}
-    )
+    mod.handle_smartctl({"host": "h1", "device": "/dev/sda; rm -rf /", "mode": "info"})
     assert captured["cmd"] == "LC_ALL=C smartctl -i -- '/dev/sda; rm -rf /'"
 
 
 def test_smartctl_dash_device_after_dashdash(monkeypatch):
     captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
-    mod.handle_smartctl(
-        {"host": "h1", "device": "-oProxyCommand=evil", "mode": "info"}
-    )
+    mod.handle_smartctl({"host": "h1", "device": "-oProxyCommand=evil", "mode": "info"})
     assert captured["cmd"] == "LC_ALL=C smartctl -i -- -oProxyCommand=evil"
 
 
@@ -381,9 +368,7 @@ def test_smartctl_handler_happy(monkeypatch):
         monkeypatch,
         SshResult(stdout=b"smart\n", stderr=b"", exit_code=0, truncated=False),
     )
-    out = mod.handle_smartctl(
-        {"host": "h1", "device": "/dev/sda", "mode": "all"}
-    )
+    out = mod.handle_smartctl({"host": "h1", "device": "/dev/sda", "mode": "all"})
     assert out == {
         "stdout": "smart\n",
         "stderr": "",
@@ -395,9 +380,7 @@ def test_smartctl_handler_happy(monkeypatch):
 
 def test_smartctl_truncated_propagates(monkeypatch):
     _stub(monkeypatch, SshResult(b"x", b"", 0, True))
-    out = mod.handle_smartctl(
-        {"host": "h1", "device": "/dev/sda", "mode": "info"}
-    )
+    out = mod.handle_smartctl({"host": "h1", "device": "/dev/sda", "mode": "info"})
     assert out["truncated"] is True
 
 

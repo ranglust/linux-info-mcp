@@ -18,6 +18,7 @@ def _stub(monkeypatch, result):
 
 # --- systemctl_status: builder ---
 
+
 def test_status_builder_default_lines():
     cmd = mod.build_remote_cmd_systemctl_status("nginx.service", 10)
     assert cmd == "LC_ALL=C systemctl status --no-pager --lines=10 -- nginx.service"
@@ -30,11 +31,10 @@ def test_status_builder_keeps_lines_zero():
 
 # --- systemctl_status: handler validation ---
 
+
 def test_status_rejects_bad_host(monkeypatch):
     with pytest.raises(ValueError):
-        mod.handle_systemctl_status(
-            {"host": "-oProxyCommand=evil", "unit": "nginx.service"}
-        )
+        mod.handle_systemctl_status({"host": "-oProxyCommand=evil", "unit": "nginx.service"})
 
 
 def test_status_rejects_unit_with_semicolon(monkeypatch):
@@ -54,19 +54,16 @@ def test_status_rejects_unit_flag_like(monkeypatch):
 
 def test_status_rejects_lines_negative(monkeypatch):
     with pytest.raises(ValueError):
-        mod.handle_systemctl_status(
-            {"host": "h1", "unit": "nginx.service", "lines": -1}
-        )
+        mod.handle_systemctl_status({"host": "h1", "unit": "nginx.service", "lines": -1})
 
 
 def test_status_rejects_lines_too_large(monkeypatch):
     with pytest.raises(ValueError):
-        mod.handle_systemctl_status(
-            {"host": "h1", "unit": "nginx.service", "lines": 10001}
-        )
+        mod.handle_systemctl_status({"host": "h1", "unit": "nginx.service", "lines": 10001})
 
 
 # --- systemctl_status: handler happy path ---
+
 
 def test_status_happy(monkeypatch):
     captured = _stub(
@@ -86,10 +83,7 @@ def test_status_happy(monkeypatch):
         "truncated": False,
     }
     assert captured["host"] == "h1"
-    assert (
-        captured["cmd"]
-        == "LC_ALL=C systemctl status --no-pager --lines=10 -- nginx.service"
-    )
+    assert captured["cmd"] == "LC_ALL=C systemctl status --no-pager --lines=10 -- nginx.service"
 
 
 def test_status_passes_through_inactive_exit_code(monkeypatch):
@@ -103,11 +97,10 @@ def test_status_passes_through_inactive_exit_code(monkeypatch):
 
 # --- systemctl_list: builder ---
 
+
 def test_list_builder_default_kind_is_units():
     cmd = mod.build_remote_cmd_systemctl_list("units", None, None, False, None)
-    assert cmd == (
-        "LC_ALL=C systemctl list-units --no-pager --no-legend --plain"
-    )
+    assert cmd == ("LC_ALL=C systemctl list-units --no-pager --no-legend --plain")
 
 
 def test_list_builder_unit_files():
@@ -116,16 +109,12 @@ def test_list_builder_unit_files():
 
 
 def test_list_builder_unit_types_forwarded():
-    cmd = mod.build_remote_cmd_systemctl_list(
-        "units", "service,timer", None, False, None
-    )
+    cmd = mod.build_remote_cmd_systemctl_list("units", "service,timer", None, False, None)
     assert "-t service,timer" in cmd
 
 
 def test_list_builder_states_forwarded():
-    cmd = mod.build_remote_cmd_systemctl_list(
-        "units", None, "failed,active", False, None
-    )
+    cmd = mod.build_remote_cmd_systemctl_list("units", None, "failed,active", False, None)
     assert "--state=failed,active" in cmd
 
 
@@ -135,14 +124,13 @@ def test_list_builder_all_flag():
 
 
 def test_list_builder_pattern_after_double_dash_quoted():
-    cmd = mod.build_remote_cmd_systemctl_list(
-        "units", None, None, False, "*.timer"
-    )
+    cmd = mod.build_remote_cmd_systemctl_list("units", None, None, False, "*.timer")
     # shlex.quote turns "*.timer" into '*.timer' so the local shell won't glob-expand.
     assert cmd.endswith("-- '*.timer'")
 
 
 # --- systemctl_list: handler validation ---
+
 
 def test_list_rejects_bad_host(monkeypatch):
     with pytest.raises(ValueError):
@@ -155,9 +143,7 @@ def test_list_rejects_bad_kind(monkeypatch):
 
 
 def test_list_default_kind_is_units(monkeypatch):
-    captured = _stub(
-        monkeypatch, SshResult(b"", b"", 0, False)
-    )
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
     mod.handle_systemctl_list({"host": "h1"})
     assert "list-units" in captured["cmd"]
 
@@ -255,9 +241,7 @@ def test_list_happy(monkeypatch):
         "truncated": False,
     }
     cmd = captured["cmd"]
-    assert cmd.startswith(
-        "LC_ALL=C systemctl list-units --no-pager --no-legend --plain"
-    )
+    assert cmd.startswith("LC_ALL=C systemctl list-units --no-pager --no-legend --plain")
     assert "-t service" in cmd
     assert "--state=active" in cmd
     assert "--all" in cmd

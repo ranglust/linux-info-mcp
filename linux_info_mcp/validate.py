@@ -1,4 +1,5 @@
 """Pure validators. Each raises ValueError on bad input."""
+
 from __future__ import annotations
 
 import os

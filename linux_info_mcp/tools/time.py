@@ -1,4 +1,5 @@
 """Time tools: chronyc, timedatectl."""
+
 from __future__ import annotations
 
 import shlex
@@ -38,9 +39,7 @@ def _validate_chronyc_subcommand(sub) -> str:
         raise ValueError("subcommand must be a non-empty string")
     _reject_unsafe_chars(sub, "subcommand")
     if sub not in _CHRONYC_SUBCOMMANDS:
-        raise ValueError(
-            f"subcommand must be one of {sorted(_CHRONYC_SUBCOMMANDS)}"
-        )
+        raise ValueError(f"subcommand must be one of {sorted(_CHRONYC_SUBCOMMANDS)}")
     return sub
 
 
@@ -49,9 +48,7 @@ def _validate_timedatectl_mode(mode) -> str:
         raise ValueError("mode must be a non-empty string")
     _reject_unsafe_chars(mode, "mode")
     if mode not in _TIMEDATECTL_MODES:
-        raise ValueError(
-            f"mode must be one of {sorted(_TIMEDATECTL_MODES)}"
-        )
+        raise ValueError(f"mode must be one of {sorted(_TIMEDATECTL_MODES)}")
     return mode
 
 

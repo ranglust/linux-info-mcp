@@ -83,9 +83,7 @@ def test_read_binary_happy(monkeypatch):
         monkeypatch,
         SshResult(stdout=b64 + b"\n", stderr=b"", exit_code=0, truncated=False),
     )
-    out = server_mod.handle_read_binary(
-        {"host": "h1", "path": "/bin/ls", "offset": 0, "length": 8}
-    )
+    out = server_mod.handle_read_binary({"host": "h1", "path": "/bin/ls", "offset": 0, "length": 8})
     assert out["bytes_read"] == len(payload)
     assert base64.b64decode(out["data_base64"]) == payload
     assert out["exit_code"] == 0
@@ -96,9 +94,7 @@ def test_read_binary_happy(monkeypatch):
 def test_read_binary_rejects_negative_offset(monkeypatch):
     _stub(monkeypatch, SshResult(b"", b"", 0, False))
     with pytest.raises(ValueError):
-        server_mod.handle_read_binary(
-            {"host": "h1", "path": "/bin/ls", "offset": -1, "length": 4}
-        )
+        server_mod.handle_read_binary({"host": "h1", "path": "/bin/ls", "offset": -1, "length": 4})
 
 
 def test_read_binary_truncation_propagates(monkeypatch):
@@ -108,9 +104,7 @@ def test_read_binary_truncation_propagates(monkeypatch):
         monkeypatch,
         SshResult(stdout=b64, stderr=b"", exit_code=0, truncated=True),
     )
-    out = server_mod.handle_read_binary(
-        {"host": "h1", "path": "/big", "offset": 0, "length": 3}
-    )
+    out = server_mod.handle_read_binary({"host": "h1", "path": "/big", "offset": 0, "length": 3})
     assert out["truncated"] is True
 
 
@@ -120,9 +114,7 @@ def test_read_binary_corrupt_stream_signals_failure(monkeypatch):
         monkeypatch,
         SshResult(stdout=b"abc", stderr=b"", exit_code=0, truncated=False),
     )
-    out = server_mod.handle_read_binary(
-        {"host": "h1", "path": "/x", "offset": 0, "length": 4}
-    )
+    out = server_mod.handle_read_binary({"host": "h1", "path": "/x", "offset": 0, "length": 4})
     assert out["bytes_read"] == 0
     assert out["exit_code"] == 1
     assert "[base64 decode failed]" in out["stderr"]
@@ -155,9 +147,7 @@ def test_server_tool_call_logging(monkeypatch, tmp_path):
             monkeypatch,
             SshResult(stdout=b"ok", stderr=b"", exit_code=0, truncated=False),
         )
-        result = asyncio.run(
-            srv._call_tool("read_file", {"host": "h1", "path": "/etc/hosts"})
-        )
+        result = asyncio.run(srv._call_tool("read_file", {"host": "h1", "path": "/etc/hosts"}))
         assert result and result[0].type == "text"
         for h in logging.getLogger("linux_info_mcp").handlers:
             h.flush()
@@ -230,9 +220,7 @@ def test_server_ssh_call_carries_tool_and_request_id(monkeypatch, tmp_path):
 
     try:
         monkeypatch.setattr(subprocess, "run", fake_run)
-        asyncio.run(
-            srv._call_tool("read_file", {"host": "h1", "path": "/etc/hosts"})
-        )
+        asyncio.run(srv._call_tool("read_file", {"host": "h1", "path": "/etc/hosts"}))
         for h in logging.getLogger("linux_info_mcp").handlers:
             h.flush()
         entries = [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
@@ -297,7 +285,11 @@ def test_call_tool_request_id_isolated_under_concurrency(monkeypatch, tmp_path):
     monkeypatch.setenv("LINUX_INFO_LOG_LEVEL", "INFO")
     setup_logging()
     try:
-        schema = {"type": "object", "properties": {"host": {"type": "string"}}, "required": ["host"]}
+        schema = {
+            "type": "object",
+            "properties": {"host": {"type": "string"}},
+            "required": ["host"],
+        }
 
         def slow_handler(args):
             time.sleep(0.05)

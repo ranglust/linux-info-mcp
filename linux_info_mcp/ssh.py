@@ -1,4 +1,5 @@
 """SSH command builders + run_ssh subprocess wrapper."""
+
 from __future__ import annotations
 
 import os
@@ -67,9 +68,7 @@ def build_remote_cmd_find(path: str, predicates: dict) -> str:
 
 def build_remote_cmd_binary(path: str, offset: int, length: int) -> str:
     qpath = shlex.quote(path)
-    return (
-        f"LC_ALL=C dd if={qpath} ibs=1 skip={offset} count={length} status=none | base64"
-    )
+    return f"LC_ALL=C dd if={qpath} ibs=1 skip={offset} count={length} status=none | base64"
 
 
 def run_ssh(host: str, remote_cmd: str) -> SshResult:
@@ -96,8 +95,11 @@ def run_ssh(host: str, remote_cmd: str) -> SshResult:
             out = out[:cap]
         err = err[:cap] + b"\n[timeout]"
         result = SshResult(
-            stdout=out, stderr=err, exit_code=124,
-            truncated=truncated, duration_ms=duration_ms,
+            stdout=out,
+            stderr=err,
+            exit_code=124,
+            truncated=truncated,
+            duration_ms=duration_ms,
         )
         _log.info(
             "ssh_call",
@@ -129,8 +131,11 @@ def run_ssh(host: str, remote_cmd: str) -> SshResult:
     if len(stderr) > cap:
         stderr = stderr[:cap]
     result = SshResult(
-        stdout=stdout, stderr=stderr, exit_code=proc.returncode,
-        truncated=truncated, duration_ms=duration_ms,
+        stdout=stdout,
+        stderr=stderr,
+        exit_code=proc.returncode,
+        truncated=truncated,
+        duration_ms=duration_ms,
     )
     _log.info(
         "ssh_call",

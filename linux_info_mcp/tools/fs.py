@@ -1,4 +1,5 @@
 """Filesystem mount inspection tools: mount, findmnt, stat_fs."""
+
 from __future__ import annotations
 
 import re

@@ -1,7 +1,7 @@
 import pytest
 
-from linux_info_mcp.ssh import SshResult
 import linux_info_mcp.tools.fs as mod
+from linux_info_mcp.ssh import SshResult
 
 
 def _stub(monkeypatch, result):
@@ -144,12 +144,8 @@ def test_findmnt_fstype_separate_flag():
 
 
 def test_findmnt_all_options():
-    cmd = mod.build_remote_cmd_findmnt(
-        json=True, target="/", source="/dev/sda1", fstype="ext4"
-    )
-    assert cmd == (
-        "LC_ALL=C findmnt -J --target=/ --source=/dev/sda1 -t ext4"
-    )
+    cmd = mod.build_remote_cmd_findmnt(json=True, target="/", source="/dev/sda1", fstype="ext4")
+    assert cmd == ("LC_ALL=C findmnt -J --target=/ --source=/dev/sda1 -t ext4")
 
 
 def test_findmnt_target_quotes_spaces():

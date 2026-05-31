@@ -1,4 +1,5 @@
 """MCP server entrypoint. Aggregates ToolSpec lists from each tools/* module."""
+
 from __future__ import annotations
 
 import asyncio
@@ -57,7 +58,8 @@ async def _call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     _, token = set_call_ctx(name)
     try:
         _log.trace(  # type: ignore[attr-defined]
-            "tool_call_in", extra={"arguments": args},
+            "tool_call_in",
+            extra={"arguments": args},
         )
         t0 = time.perf_counter()
         spec = _TOOLS.get(name)
@@ -97,7 +99,8 @@ async def _call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             log_extra["error"] = error_msg
         _log.info("tool_call", extra=log_extra)
         _log.trace(  # type: ignore[attr-defined]
-            "tool_call_out", extra={"result": result},
+            "tool_call_out",
+            extra={"result": result},
         )
         return [types.TextContent(type="text", text=json.dumps(result))]
     finally:
