@@ -8,6 +8,9 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    groups:
+      actions:
+        patterns: ["*"]
 
   - package-ecosystem: "pip"
     directory: "/"
