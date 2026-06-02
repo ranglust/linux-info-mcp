@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 44 tools across 13 modules (files, systemd, journalctl, perf, net, proc, disk, kernel, pkg, sys, time, fs, docker).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 62 tools across 14 modules (files, systemd, journalctl, perf, net, proc, disk, kernel, pkg, sys, time, fs, docker, facts). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -9,12 +9,25 @@ MCP server that runs read-only diagnostic commands on remote hosts via SSH. Expo
 - Safe by construction: no command injection, no flag injection, no `-exec`-style escape hatches.
 - Configurable SSH invocation (so `ssh`, `ssh -F file`, `pt ro`, `tshctx ssh`, etc. all work).
 - Single-file install via `uv`; runnable from any MCP client (Claude Desktop, Claude Code).
+- Bounded multi-host fan-out: run a tool across a small list of hosts in parallel.
 
 **Non-goals**
-- Multi-host fan-out (single host per call).
 - Any write/mutate operation on remote host.
 - Streaming output (single response, byte-capped).
 - Authentication management (delegate to user's SSH agent / config).
+
+## Multi-host fan-out
+
+Every tool accepts either a single `host` (string) or a list of `hosts` (array of strings); the two are mutually exclusive.
+
+- `host` provided → response is the tool's normal single-host dict (unchanged shape).
+- `hosts` provided → response is `{multi_host: true, host_count: N, results: [ {host, ...tool-dict} | {host, error, outcome}, ... ]}`. `results` preserves the order of the input `hosts` list, deduped (each distinct host run once).
+- Host count is capped by `LINUX_INFO_MAX_HOSTS` (default 10), itself clamped to a hard maximum of 25 to prevent an SSH storm. Exceeding the effective cap is a `validation_error` for the whole call.
+- Hosts run concurrently in a thread pool of `LINUX_INFO_PARALLELISM` workers (default 4, clamped to [1, 25], and never more than the host count).
+- Per-host failures are isolated: a host whose handler raises returns `{host, error, outcome}` (`validation_error` / `handler_error`) in its slot; other hosts still run. The overall `tool_call` outcome is `partial` when any host errored or returned a non-zero exit code.
+- Each host is validated independently (allowlist, leading-dash, NUL/newline) exactly as the single-host path.
+
+Per-tool sections below list `host: str (required)` for brevity; read it as "`host` or `hosts` (one required)".
 
 ## Tools
 
@@ -935,6 +948,8 @@ Gather host facts in a **single SSH round-trip** by running a fixed bundled shel
 | `LINUX_INFO_HOSTS` | `` (empty) | Comma-separated allowlist. Empty = any host. Hostnames matched exactly. |
 | `LINUX_INFO_TIMEOUT` | `30` | Seconds before subprocess kill. On timeout: `exit_code=124`, `[timeout]` appended to `stderr`. |
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap applied to both stdout and stderr. Stdout truncation sets `truncated: true`. |
+| `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per `hosts` fan-out call. Clamped to `[1, 25]` (25 is a hard ceiling). Invalid / `<1` falls back to 10. |
+| `LINUX_INFO_PARALLELISM` | `4` | Worker threads for `hosts` fan-out. Clamped to `[1, 25]`; effective workers also capped at the host count. Invalid / `<1` falls back to 4. |
 | `LINUX_INFO_LOG_FILE` | `` (empty) | Absolute path to JSONL log file. Empty / unset = logging fully disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | One of `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Unknown values fall back to `INFO`. Only honored when `LINUX_INFO_LOG_FILE` is set. |
 
@@ -955,32 +970,39 @@ Gather host facts in a **single SSH round-trip** by running a fixed bundled shel
 
 ```
 linux-info-mcp/
-  server.py                  # entrypoint shim
+  server.py                  # entrypoint shim → linux_info_mcp.server:main
   linux_info_mcp/
     __init__.py
-    ssh.py                   # run_ssh + builders for the original 3 tools
-    validate.py              # shared validators + whitelists
-    server.py                # MCP server: collects ToolSpec lists from tools/* and registers
+    ssh.py                   # run_ssh + SshResult + builders for the file tools
+    validate.py              # shared validators + whitelists + multi-host resolution
+    log.py                   # JSONL logging, TRACE level, ContextVar correlation
+    server.py                # MCP server: auto-discovers tools/*, registers, dispatches (single + multi-host)
     tools/
-      __init__.py
-      files.py               # ToolSpec list: read_file, find_files, read_binary
-      systemctl.py           # ToolSpec list: systemctl_status, systemctl_list
-      journalctl.py          # ToolSpec list: journalctl
-      perf.py                # ToolSpec list: iostat, vmstat, free, df, ps
-      net.py                 # ToolSpec list: ss, ip_addr, ip_route, lsof_net
-      proc.py                # ToolSpec list: lsof, pgrep, pidof, top
-      disk.py                # ToolSpec list: du, lsblk, blkid, smartctl
-      kernel.py              # ToolSpec list: dmesg, uname, sysctl
-      pkg.py                 # ToolSpec list: dpkg_list, rpm_list, apt_list_installed
-      sys.py                 # ToolSpec list: uptime, who, last, lscpu, lsmem, dmidecode
-      time.py                # ToolSpec list: chronyc, timedatectl
-      fs.py                  # ToolSpec list: mount, findmnt, stat_fs
-      docker.py              # ToolSpec list: docker_ps, docker_inspect, docker_images, docker_logs
+      __init__.py            # ToolSpec dataclass
+      _common.py             # shared per-tool helpers (underscore = skipped by discovery)
+      files.py               # read_file, find_files, read_binary
+      systemctl.py           # systemctl_status, systemctl_list, systemctl_list_timers, systemctl_list_sockets
+      journalctl.py          # journalctl
+      perf.py                # iostat, vmstat, free, df, ps, psi_stats, meminfo
+      net.py                 # ss, ip_addr, ip_route, lsof_net, arp_table, tc_qdisc, ethtool, conntrack, net_protocol_stats, nft_list, iptables_list
+      proc.py                # lsof, pgrep, pidof, top, proc_limits
+      disk.py                # du, lsblk, blkid, smartctl, blockdev
+      kernel.py              # dmesg, uname, sysctl, slabtop, numastat, cgroup_stats, systemd_analyze
+      pkg.py                 # dpkg_list, rpm_list, apt_list_installed
+      sys.py                 # uptime, who, last, lscpu, lsmem, dmidecode
+      time.py                # chronyc, timedatectl
+      fs.py                  # mount, findmnt, stat_fs
+      docker.py              # docker_ps, docker_inspect, docker_images, docker_logs
+      facts.py               # host_facts
   tests/
+    conftest.py
     test_validate.py
     test_ssh.py
     test_server.py
+    test_log.py
     tools/
+      __init__.py
+      test_files.py
       test_systemctl.py
       test_journalctl.py
       test_perf.py
@@ -993,11 +1015,15 @@ linux-info-mcp/
       test_time.py
       test_fs.py
       test_docker.py
-    conftest.py
+      test_facts.py
   pyproject.toml
   README.md
   SPEC.md                    # this file
+  AGENTS.md                  # agent operating notes
+  SECURITY.md                # threat model + reporting
 ```
+
+62 tools across 14 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 
@@ -1015,10 +1041,10 @@ class ToolSpec:
 
 Each `tools/<area>.py` module exports `TOOLS: list[ToolSpec]`. `server.py` imports every module's `TOOLS` and registers them with the `mcp` SDK (single `list_tools` and `call_tool` decorator pair, dispatching by name).
 
-- `validate.py`: pure shared validators only — `validate_host`, `validate_path`, `validate_grep_flags`, `validate_grep_pattern`, `validate_find_args`, `validate_offset_length`, `binary_length_cap`, `validate_unit_name`, `validate_int_in_range`, `reject_unsafe_chars`. Tool-specific validators may live inside the tool module.
+- `validate.py`: pure shared validators only — `validate_host`, `validate_host_list`, `resolve_target_hosts`, `effective_max_hosts`, `parallelism`, `validate_path`, `validate_grep_flags`, `validate_grep_pattern`, `validate_find_args`, `validate_offset_length`, `binary_length_cap`, `validate_unit_name`, `validate_int_in_range`, `reject_unsafe_chars`. Tool-specific validators may live inside the tool module.
 - `tools/_common.py`: shared per-tool helpers — `decode_text`, `validate_bool`, `validate_user`, `validate_pid`, `validate_ref`. Module name is underscore-prefixed so the auto-discovery loop in `server.py` skips it (only modules without a leading `_` register `TOOLS`).
 - `ssh.py`: `run_ssh(host, remote_cmd) -> SshResult`, plus the file-tool builders. Each tool module builds its own remote command string (calls `shlex.quote` itself) and uses `run_ssh` for execution.
-- `server.py`: imports `TOOLS` from every `tools/*.py`, builds a single dispatch dict, registers MCP tools. Handlers are sync (they call blocking `subprocess.run` via `run_ssh`); `_call_tool` runs each via `await asyncio.to_thread(spec.handler, args)` so concurrent MCP `call_tool` requests truly parallelize instead of serializing on the event loop. ContextVar (`tool`, `request_id`) propagates into the worker thread because `asyncio.to_thread` snapshots and replays the current `contextvars.Context`.
+- `server.py`: imports `TOOLS` from every `tools/*.py`, builds a single dispatch dict, registers MCP tools. Handlers are sync (they call blocking `subprocess.run` via `run_ssh`); `_call_tool` runs each via `await asyncio.to_thread(spec.handler, args)` so concurrent MCP `call_tool` requests truly parallelize instead of serializing on the event loop. ContextVar (`tool`, `request_id`) propagates into the worker thread because `asyncio.to_thread` snapshots and replays the current `contextvars.Context`. `_call_tool` calls `resolve_target_hosts(args)` to decide single vs multi; for multi it dispatches `_run_multi_host` (a `ThreadPoolExecutor` fan-out) via the same `to_thread` hop. Each fan-out worker is submitted as `contextvars.copy_context().run(...)` so the `tool`/`request_id` context reaches per-host `run_ssh` log lines. `_list_tools` advertises an augmented schema per tool (adds the `hosts` array property, drops `host` from `required`); the original `ToolSpec.input_schema` handlers see is left unchanged.
 
 ## Logging
 
@@ -1037,7 +1063,7 @@ JSONL file logging, off by default.
 | `linux_info_mcp.server` | INFO | `server_start` | `tools`, `tool_count` |
 | `linux_info_mcp.server` | INFO | `server_stop` | — |
 | `linux_info_mcp.server` | TRACE | `tool_call_in` | `tool`, `arguments` |
-| `linux_info_mcp.server` | INFO | `tool_call` | `tool`, `host`, `duration_ms`, `exit_code`, `outcome` (`ok` / `nonzero` / `validation_error` / `unknown_tool` / `handler_error`), `error` (on any non-`ok` outcome) |
+| `linux_info_mcp.server` | INFO | `tool_call` | `tool`, `host`, `duration_ms`, `exit_code`, `outcome` (`ok` / `nonzero` / `partial` / `validation_error` / `unknown_tool` / `handler_error`), `host_count` (multi-host only; `host` is `null` then), `error` (on any non-`ok` outcome) |
 | `linux_info_mcp.server` | TRACE | `tool_call_out` | `tool`, `result` |
 | `linux_info_mcp.ssh` | TRACE | `ssh_call_start` | `host`, `remote_cmd` |
 | `linux_info_mcp.ssh` | INFO | `ssh_call` | `host`, `exit_code`, `duration_ms`, `stdout_bytes`, `stderr_bytes`, `truncated`, `stderr_truncated`, `outcome` (`ok` / `nonzero` / `timeout`) |

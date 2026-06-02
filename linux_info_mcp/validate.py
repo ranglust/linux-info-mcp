@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 import re
 
+HARD_MAX_HOSTS = 25
+DEFAULT_MAX_HOSTS = 10
+DEFAULT_PARALLELISM = 4
+
 GREP_FLAG_WHITELIST = {"-i", "-E", "-v", "-n", "-w", "-F"}
 _GREP_CONTEXT_RE = re.compile(r"^-C[1-9]$")
 FIND_TYPE_WHITELIST = {"f", "d", "l", "b", "c", "p", "s"}
@@ -35,6 +39,70 @@ def validate_host(host: str) -> str:
         if host not in allowlist:
             raise ValueError(f"host {host!r} not in LINUX_INFO_HOSTS allowlist")
     return host
+
+
+def effective_max_hosts() -> int:
+    """Per-call host-list cap. LINUX_INFO_MAX_HOSTS (default 10), clamped to [1, HARD_MAX_HOSTS]."""
+    raw = os.environ.get("LINUX_INFO_MAX_HOSTS", "").strip()
+    if not raw:
+        limit = DEFAULT_MAX_HOSTS
+    else:
+        try:
+            limit = int(raw)
+        except ValueError:
+            limit = DEFAULT_MAX_HOSTS
+        if limit < 1:
+            limit = DEFAULT_MAX_HOSTS
+    return min(limit, HARD_MAX_HOSTS)
+
+
+def parallelism() -> int:
+    """Fan-out worker count. LINUX_INFO_PARALLELISM (default 4), clamped to [1, HARD_MAX_HOSTS]."""
+    raw = os.environ.get("LINUX_INFO_PARALLELISM", "").strip()
+    if not raw:
+        return DEFAULT_PARALLELISM
+    try:
+        n = int(raw)
+    except ValueError:
+        return DEFAULT_PARALLELISM
+    if n < 1:
+        return DEFAULT_PARALLELISM
+    return min(n, HARD_MAX_HOSTS)
+
+
+def validate_host_list(hosts) -> list[str]:
+    """Validate a list of hosts; dedupe preserving order. Count checked before dedupe."""
+    if not isinstance(hosts, list):
+        raise ValueError("hosts must be a list of strings")
+    if not hosts:
+        raise ValueError("hosts must be a non-empty list")
+    limit = effective_max_hosts()
+    if len(hosts) > limit:
+        raise ValueError(
+            f"hosts count {len(hosts)} exceeds limit {limit} "
+            f"(LINUX_INFO_MAX_HOSTS, hard max {HARD_MAX_HOSTS})"
+        )
+    out: list[str] = []
+    seen: set[str] = set()
+    for h in hosts:
+        vh = validate_host(h)
+        if vh not in seen:
+            seen.add(vh)
+            out.append(vh)
+    return out
+
+
+def resolve_target_hosts(args) -> tuple[list[str], bool]:
+    """Return (hosts, is_multi). is_multi True when caller passed `hosts`. Mutually exclusive with `host`."""
+    has_hosts = isinstance(args, dict) and args.get("hosts") is not None
+    has_host = isinstance(args, dict) and args.get("host") is not None
+    if has_hosts and has_host:
+        raise ValueError("provide either 'host' or 'hosts', not both")
+    if has_hosts:
+        return validate_host_list(args["hosts"]), True
+    if has_host:
+        return [validate_host(args["host"])], False
+    raise ValueError("missing required 'host' (or 'hosts')")
 
 
 def validate_path(path: str, label: str = "path") -> str:

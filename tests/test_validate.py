@@ -1,11 +1,16 @@
 import pytest
 
 from linux_info_mcp.validate import (
+    HARD_MAX_HOSTS,
     binary_length_cap,
+    effective_max_hosts,
+    parallelism,
+    resolve_target_hosts,
     validate_find_args,
     validate_grep_flags,
     validate_grep_pattern,
     validate_host,
+    validate_host_list,
     validate_offset_length,
     validate_path,
 )
@@ -470,3 +475,134 @@ def test_validate_cgroup_path_rejects_too_long():
 
     with pytest.raises(ValueError):
         validate_cgroup_path("a" * 1025)
+
+
+# multi-host: effective_max_hosts / parallelism
+
+
+def test_effective_max_hosts_default():
+    assert effective_max_hosts() == 10
+
+
+def test_effective_max_hosts_env_override(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_MAX_HOSTS", "7")
+    assert effective_max_hosts() == 7
+
+
+def test_effective_max_hosts_clamped_to_hard_max(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_MAX_HOSTS", "1000")
+    assert effective_max_hosts() == HARD_MAX_HOSTS == 25
+
+
+def test_effective_max_hosts_invalid_falls_back(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_MAX_HOSTS", "notanint")
+    assert effective_max_hosts() == 10
+
+
+def test_effective_max_hosts_zero_falls_back(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_MAX_HOSTS", "0")
+    assert effective_max_hosts() == 10
+
+
+def test_parallelism_default():
+    assert parallelism() == 4
+
+
+def test_parallelism_env_override(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_PARALLELISM", "8")
+    assert parallelism() == 8
+
+
+def test_parallelism_clamped(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_PARALLELISM", "999")
+    assert parallelism() == HARD_MAX_HOSTS
+
+
+def test_parallelism_invalid_falls_back(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_PARALLELISM", "x")
+    assert parallelism() == 4
+
+
+def test_parallelism_zero_falls_back(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_PARALLELISM", "0")
+    assert parallelism() == 4
+
+
+# multi-host: validate_host_list
+
+
+def test_validate_host_list_basic():
+    assert validate_host_list(["h1", "h2"]) == ["h1", "h2"]
+
+
+def test_validate_host_list_dedupes_preserving_order():
+    assert validate_host_list(["h1", "h2", "h1", "h3"]) == ["h1", "h2", "h3"]
+
+
+def test_validate_host_list_rejects_non_list():
+    with pytest.raises(ValueError):
+        validate_host_list("h1")
+
+
+def test_validate_host_list_rejects_empty():
+    with pytest.raises(ValueError):
+        validate_host_list([])
+
+
+def test_validate_host_list_rejects_over_limit():
+    with pytest.raises(ValueError):
+        validate_host_list([f"h{i}" for i in range(11)])
+
+
+def test_validate_host_list_respects_env_limit(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_MAX_HOSTS", "2")
+    with pytest.raises(ValueError):
+        validate_host_list(["h1", "h2", "h3"])
+
+
+def test_validate_host_list_hard_max_enforced(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_MAX_HOSTS", "100")
+    with pytest.raises(ValueError):
+        validate_host_list([f"h{i}" for i in range(26)])
+
+
+def test_validate_host_list_rejects_injection_host():
+    with pytest.raises(ValueError):
+        validate_host_list(["h1", "-oProxyCommand=evil"])
+
+
+def test_validate_host_list_rejects_newline_host():
+    with pytest.raises(ValueError):
+        validate_host_list(["h1", "h2\nrm -rf /"])
+
+
+def test_validate_host_list_honors_allowlist(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_HOSTS", "h1,h2")
+    with pytest.raises(ValueError):
+        validate_host_list(["h1", "h3"])
+
+
+# multi-host: resolve_target_hosts
+
+
+def test_resolve_single_host():
+    assert resolve_target_hosts({"host": "h1"}) == (["h1"], False)
+
+
+def test_resolve_multi_hosts():
+    assert resolve_target_hosts({"hosts": ["h1", "h2"]}) == (["h1", "h2"], True)
+
+
+def test_resolve_rejects_both():
+    with pytest.raises(ValueError):
+        resolve_target_hosts({"host": "h1", "hosts": ["h2"]})
+
+
+def test_resolve_rejects_neither():
+    with pytest.raises(ValueError):
+        resolve_target_hosts({"path": "/x"})
+
+
+def test_resolve_single_validates_host():
+    with pytest.raises(ValueError):
+        resolve_target_hosts({"host": "-oProxyCommand=evil"})

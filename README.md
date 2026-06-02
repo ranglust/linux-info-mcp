@@ -56,6 +56,8 @@ uv run pytest -q
 | `LINUX_INFO_HOSTS` | `` | Comma-separated allowlist of exact hostnames. Empty = any host. |
 | `LINUX_INFO_TIMEOUT` | `30` | Seconds before subprocess kill. On timeout: `exit_code=124`, `[timeout]` appended to `stderr`. |
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap on both stdout and stderr. `read_binary` `length` is further capped at `floor((MAX_BYTES - 64) * 3 / 4)` so its base64 stream fits. |
+| `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per multi-host (`hosts`) call. Clamped to `[1, 25]`; 25 is a hard ceiling to prevent an SSH storm. |
+| `LINUX_INFO_PARALLELISM` | `4` | Worker threads for multi-host fan-out. Clamped to `[1, 25]` and never exceeds the host count. |
 | `LINUX_INFO_LOG_FILE` | `` | Absolute path to JSONL log file. Empty / unset = logging disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. `TRACE` adds full tool-call I/O and the remote SSH command/output (verbose). |
 
@@ -72,6 +74,8 @@ uv run pytest -q
         "LINUX_INFO_HOSTS": "",
         "LINUX_INFO_TIMEOUT": "30",
         "LINUX_INFO_MAX_BYTES": "1048576",
+        "LINUX_INFO_MAX_HOSTS": "10",
+        "LINUX_INFO_PARALLELISM": "4",
         "LINUX_INFO_LOG_FILE": "",
         "LINUX_INFO_LOG_LEVEL": "INFO"
       }
@@ -98,7 +102,7 @@ JSONL file logging, off by default. Set `LINUX_INFO_LOG_FILE=/path/to/log.jsonl`
 {"ts":"2026-05-30T12:34:56.789+00:00","level":"INFO","logger":"linux_info_mcp.ssh","msg":"ssh_call","host":"h1","exit_code":0,"duration_ms":42.5,"stdout_bytes":1234,"truncated":false,"outcome":"ok","pid":12345,"tool":"read_file","request_id":"a1b2c3d4e5f6"}
 ```
 
-INFO level emits `server_start`, `server_stop`, `tool_call` (with `tool`, `host`, `duration_ms`, `exit_code`, `outcome`), and `ssh_call` (with `host`, `exit_code`, `duration_ms`, `stdout_bytes`, `stderr_bytes`, `truncated`). TRACE additionally emits the full tool arguments, tool result, remote command string, and remote stdout/stderr. See SPEC.md §Logging for the full table.
+INFO level emits `server_start`, `server_stop`, `tool_call` (with `tool`, `host`, `duration_ms`, `exit_code`, `outcome`; multi-host calls add `host_count`, set `host` to `null`, and report `outcome: partial` when any host fails), and `ssh_call` (with `host`, `exit_code`, `duration_ms`, `stdout_bytes`, `stderr_bytes`, `truncated`; one entry per host in a fan-out, all sharing the call's `request_id`). TRACE additionally emits the full tool arguments, tool result, remote command string, and remote stdout/stderr. See SPEC.md §Logging for the full table.
 
 `run_ssh` is the central timing/logging point; it stamps `duration_ms` onto `SshResult` and emits one `ssh_call` log entry per call. `_call_tool` is the central tool-level timing/logging point covering validation + dispatch.
 
@@ -108,9 +112,21 @@ Every log line during a tool call carries `tool` (MCP tool name) and `request_id
 
 Tool handlers are sync (they call blocking `subprocess.run` for `ssh`). The async MCP entrypoint dispatches each handler via `asyncio.to_thread`, so concurrent `call_tool` requests from the agent run on a thread pool instead of serializing on the event loop. Wall time for N parallel tool calls is therefore `max(durations)` rather than `sum(durations)` — particularly relevant for teleport-backed SSH where each handshake costs 0.5–2s.
 
+## Multi-host fan-out
+
+Every tool takes either a single `host` (string) or a list of `hosts` (array) — mutually exclusive. With `hosts`, the tool runs on each host in parallel and returns:
+
+```json
+{"multi_host": true, "host_count": 2, "results": [
+  {"host": "h1", "stdout": "...", "stderr": "", "exit_code": 0, "truncated": false, "stderr_truncated": false},
+  {"host": "h2", "error": "RuntimeError: ...", "outcome": "handler_error"}
+]}
+```
+
+`results` follows the input order (deduped). Per-host failures are isolated — one bad host does not abort the others; the overall `tool_call` outcome is then `partial`. Host count is capped by `LINUX_INFO_MAX_HOSTS` (default 10, hard max 25); fan-out runs `LINUX_INFO_PARALLELISM` workers (default 4). A single `host` returns the normal flat dict, unchanged.
+
 ## Limitations
 
-- One host per call. No fan-out.
 - One-shot response per call. No streaming; stdout is capped at `LINUX_INFO_MAX_BYTES` and `truncated: true` is set when the cap is hit.
 - SSH authentication is delegated to the user's ssh config / agent. This server never handles credentials.
 

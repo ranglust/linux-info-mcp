@@ -23,8 +23,9 @@ You will get an initial acknowledgment within 5 business days. Coordinated discl
 ## In Scope
 
 - Command injection in any tool handler or builder (anywhere a remote command is constructed).
-- Argument validation bypass (NUL/newline rejection, host allowlist, whitelist regexes).
+- Argument validation bypass (NUL/newline rejection, host allowlist, whitelist regexes). Multi-host `hosts` entries pass the same `validate_host` path per entry.
 - SSH command argv construction (`shlex.split` of `LINUX_INFO_SSH_CMD`, host quoting).
+- Multi-host fan-out: host-count cap bypass (`LINUX_INFO_MAX_HOSTS` / hard max 25, the SSH-storm guard) or ContextVar bleed across per-host worker threads.
 - Logging-side issues (log injection, secret leakage in logs, ContextVar bleed across requests).
 - Truncation/output-cap bypass that could mask injected payloads.
 - Any path that lets a caller execute a write/mutate command on a remote host (this server is read-only by construction).

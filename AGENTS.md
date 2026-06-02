@@ -4,7 +4,7 @@ Operating notes for AI coding agents working in this repo. Authoritative spec is
 
 ## What this is
 
-MCP (Model Context Protocol) server, Python, single-host SSH-based read-only diagnostics. Exposes 62 tools today across 14 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`), proc (`lsof`, `pgrep`, `pidof`, `top`, `proc_limits`), disk (`du`, `lsblk`, `blkid`, `smartctl`, `blockdev`), kernel (`dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`), facts (`host_facts`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
+MCP (Model Context Protocol) server, Python, SSH-based read-only diagnostics. Per call targets a single `host` or a bounded parallel `hosts` fan-out. Exposes 62 tools today across 14 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`), proc (`lsof`, `pgrep`, `pidof`, `top`, `proc_limits`), disk (`du`, `lsblk`, `blkid`, `smartctl`, `blockdev`), kernel (`dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`), facts (`host_facts`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
 
 Read `SPEC.md` first before implementing or modifying any tool. SPEC defines arg schemas, validators, env vars, security model, logging events, and architecture. Drift from SPEC = bug.
 
@@ -66,6 +66,8 @@ Python: `uv` only. Never `python3`/`pip3`.
 Each `tools/<area>.py` exports `TOOLS: list[ToolSpec]`. A ToolSpec is `(name, description, input_schema, handler)`. `server.py` discovers them via `pkgutil.iter_modules`. Submodules whose name starts with `_` are skipped. Names must be unique and non-empty.
 
 A handler receives a `dict`, validates it, builds the remote command string, calls `run_ssh(host, remote_cmd)`, and returns a dict with shape `{stdout, stderr, exit_code, truncated, stderr_truncated}` (or, for `read_binary`, `{data_base64, bytes_read, stderr, exit_code, truncated}`; for `host_facts`, adds a parsed `facts` key).
+
+Handlers always operate on a single `args["host"]`. **Multi-host fan-out is centralized in `server.py` — never add `hosts` handling to a tool.** `_call_tool` calls `resolve_target_hosts(args)`; if the caller passed `hosts` (array, mutually exclusive with `host`), it dispatches `_run_multi_host`, which invokes the unchanged handler once per host in a `ThreadPoolExecutor` (size `LINUX_INFO_PARALLELISM`, default 4) and aggregates into `{multi_host, host_count, results: [{host, ...}]}`. Each worker runs under a copied `contextvars.Context` so logging correlation reaches per-host `run_ssh` lines. The `hosts` schema property is injected automatically in `_list_tools`; do not add it to per-tool schemas. Caps: `LINUX_INFO_MAX_HOSTS` (default 10, hard max 25). See SPEC.md §Multi-host fan-out.
 
 Handlers stay **sync**. The async server entrypoint (`_call_tool` in `server.py`) wraps dispatch with `await asyncio.to_thread(spec.handler, args)` so the blocking `subprocess.run` inside `run_ssh` doesn't pin the event loop, and concurrent MCP requests truly parallelize. Don't make handlers async — that breaks the assumption that `to_thread` is the only thread-pool entry point and would also break ContextVar propagation if you forgot to copy the context manually.
 
@@ -133,6 +135,8 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 | `LINUX_INFO_HOSTS` | (empty) | Comma-list host allowlist; empty = any. |
 | `LINUX_INFO_TIMEOUT` | `30` | Seconds, subprocess timeout. |
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap on stdout and stderr. |
+| `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per `hosts` fan-out call. Clamped to [1, 25] (hard ceiling). |
+| `LINUX_INFO_PARALLELISM` | `4` | Fan-out worker threads. Clamped to [1, 25], capped at host count. |
 | `LINUX_INFO_LOG_FILE` | (empty) | JSONL log path; unset = logging disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL. |
 
@@ -143,4 +147,4 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 - Central SSH wrapper + timing: `linux_info_mcp/ssh.py:run_ssh`
 - Logging setup + ContextVar filter: `linux_info_mcp/log.py:setup_logging`
 - Shared validators: `linux_info_mcp/validate.py`
-- Spec sections per tool: SPEC.md §1–§44
+- Spec sections per tool: SPEC.md §1–§62
