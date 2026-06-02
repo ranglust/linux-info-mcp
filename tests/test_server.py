@@ -502,3 +502,15 @@ def test_list_tools_advertises_hosts_and_relaxes_host(monkeypatch):
     assert "host" not in rf.inputSchema.get("required", [])
     # original ToolSpec schema untouched
     assert "host" in srv._TOOLS["read_file"].input_schema["required"]
+
+
+def test_list_tools_description_mentions_multi_host():
+    import asyncio
+
+    from linux_info_mcp import server as srv
+
+    tools = asyncio.run(srv._list_tools())
+    for t in tools:
+        assert "`hosts`" in t.description, f"{t.name} description omits multi-host"
+    # original ToolSpec description untouched
+    assert "`hosts`" not in srv._TOOLS["read_file"].description

@@ -75,8 +75,24 @@ def _augment_schema(schema: dict) -> dict:
     return s
 
 
+_MULTI_HOST_SUFFIX = (
+    " Targets a single `host`, or pass `hosts` (array) to run on several hosts "
+    "in parallel and get per-host results."
+)
+
+
+def _augment_description(description: str) -> str:
+    """Surface multi-host support in the headline so models see it without reading the schema."""
+    if "`hosts`" in description:
+        return description
+    return f"{description.rstrip()}{_MULTI_HOST_SUFFIX}"
+
+
 _AUGMENTED_SCHEMAS: dict[str, dict] = {
     name: _augment_schema(spec.input_schema) for name, spec in _TOOLS.items()
+}
+_AUGMENTED_DESCRIPTIONS: dict[str, str] = {
+    name: _augment_description(spec.description) for name, spec in _TOOLS.items()
 }
 
 
@@ -85,7 +101,7 @@ async def _list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name=s.name,
-            description=s.description,
+            description=_AUGMENTED_DESCRIPTIONS.get(s.name, s.description),
             inputSchema=_AUGMENTED_SCHEMAS.get(s.name, s.input_schema),
         )
         for s in _TOOLS.values()
