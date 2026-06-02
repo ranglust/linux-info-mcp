@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 62 tools across 14 modules (files, systemd, journalctl, perf, net, proc, disk, kernel, pkg, sys, time, fs, docker, facts). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 66 tools across 15 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -940,6 +940,64 @@ Gather host facts in a **single SSH round-trip** by running a fixed bundled shel
 
 ---
 
+### 63. `lldp_neighbors`
+
+Discovered LLDP peers (upstream switch, remote port, VLAN, management address) via `lldpcli show neighbors`. Read-only.
+
+**Args**
+- `host: str` — required.
+- `format: str` — optional, one of `keyvalue` (default), `json`, `json0`, `xml`, `plain`. Whitelist; default `keyvalue` for stable parsing.
+- `iface: str` — optional. Scopes to one local port (`ports <iface>`). Validated `^[A-Za-z0-9._@:-]{1,32}$`.
+
+**Behavior**
+- Remote command: `LC_ALL=C lldpcli -f <format> show neighbors [ports <iface>]`. The `show` subcommand is a fixed literal; `format`/`iface` are validated + `shlex.quote`d.
+- Requires `lldpd` running; the daemon socket may require privileges — exit code / stderr pass through unchanged.
+
+**Returns** `{stdout, stderr, exit_code, truncated, stderr_truncated}`.
+
+### 64. `lldp_interfaces`
+
+Local interfaces `lldpd` manages and what it advertises, via `lldpcli show interfaces`. Read-only.
+
+**Args**
+- `host: str` — required.
+- `format: str` — optional, same whitelist as §63 (default `keyvalue`).
+- `iface: str` — optional, same validation as §63.
+
+**Behavior**
+- Remote command: `LC_ALL=C lldpcli -f <format> show interfaces [ports <iface>]`.
+
+**Returns** `{stdout, stderr, exit_code, truncated, stderr_truncated}`.
+
+### 65. `lldp_statistics`
+
+Per-port LLDP frame counters (tx, rx, discarded, unrecognized, aged out) via `lldpcli show statistics`. Read-only.
+
+**Args**
+- `host: str` — required.
+- `format: str` — optional, same whitelist as §63 (default `keyvalue`).
+- `iface: str` — optional, same validation as §63.
+
+**Behavior**
+- Remote command: `LC_ALL=C lldpcli -f <format> show statistics [ports <iface>]`.
+
+**Returns** `{stdout, stderr, exit_code, truncated, stderr_truncated}`.
+
+### 66. `lldp_chassis`
+
+Local chassis information this host advertises (chassis id, name, description, capabilities) via `lldpcli show chassis`. Read-only.
+
+**Args**
+- `host: str` — required.
+- `format: str` — optional, same whitelist as §63 (default `keyvalue`).
+
+**Behavior**
+- Remote command: `LC_ALL=C lldpcli -f <format> show chassis`. No `iface` argument.
+
+**Returns** `{stdout, stderr, exit_code, truncated, stderr_truncated}`.
+
+---
+
 ## Configuration (environment variables)
 
 | Var | Default | Meaning |
@@ -985,6 +1043,7 @@ linux-info-mcp/
       journalctl.py          # journalctl
       perf.py                # iostat, vmstat, free, df, ps, psi_stats, meminfo
       net.py                 # ss, ip_addr, ip_route, lsof_net, arp_table, tc_qdisc, ethtool, conntrack, net_protocol_stats, nft_list, iptables_list
+      lldp.py                # lldp_neighbors, lldp_interfaces, lldp_statistics, lldp_chassis
       proc.py                # lsof, pgrep, pidof, top, proc_limits
       disk.py                # du, lsblk, blkid, smartctl, blockdev
       kernel.py              # dmesg, uname, sysctl, slabtop, numastat, cgroup_stats, systemd_analyze
@@ -1007,6 +1066,7 @@ linux-info-mcp/
       test_journalctl.py
       test_perf.py
       test_net.py
+      test_lldp.py
       test_proc.py
       test_disk.py
       test_kernel.py
@@ -1016,6 +1076,7 @@ linux-info-mcp/
       test_fs.py
       test_docker.py
       test_facts.py
+    e2e/                     # layer 3 agent-driven e2e (manifest.py, capture_samples.py, PROMPT.md); not run by `uv run pytest`
   pyproject.toml
   README.md
   SPEC.md                    # this file
@@ -1023,7 +1084,7 @@ linux-info-mcp/
   SECURITY.md                # threat model + reporting
 ```
 
-62 tools across 14 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
+66 tools across 15 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 

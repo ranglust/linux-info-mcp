@@ -47,6 +47,13 @@ TOOL_ARGS: dict[str, list[dict]] = {
     # net: ethtool requires iface; eth0 is best-effort (error baseline on hosts
     # without eth0, which is fine — both sides will error consistently).
     "ethtool": [{"iface": "eth0"}],
+    # lldp: needs lldpd running (and often privileges for the socket). On hosts
+    # without lldpd these error baseline, which the compare step matches. Default
+    # keyvalue format; host-only args avoid per-host iface assumptions.
+    "lldp_neighbors": [{}],
+    "lldp_interfaces": [{}],
+    "lldp_statistics": [{}],
+    "lldp_chassis": [{}],
     # kernel: cgroup_path is relative to /sys/fs/cgroup; system.slice is always
     # present on systemd hosts.
     "cgroup_stats": [{"cgroup_path": "system.slice"}],

@@ -4,7 +4,7 @@ Operating notes for AI coding agents working in this repo. Authoritative spec is
 
 ## What this is
 
-MCP (Model Context Protocol) server, Python, SSH-based read-only diagnostics. Per call targets a single `host` or a bounded parallel `hosts` fan-out. Exposes 62 tools today across 14 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`), proc (`lsof`, `pgrep`, `pidof`, `top`, `proc_limits`), disk (`du`, `lsblk`, `blkid`, `smartctl`, `blockdev`), kernel (`dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`), facts (`host_facts`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
+MCP (Model Context Protocol) server, Python, SSH-based read-only diagnostics. Per call targets a single `host` or a bounded parallel `hosts` fan-out. Exposes 66 tools today across 15 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`), lldp (`lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`), proc (`lsof`, `pgrep`, `pidof`, `top`, `proc_limits`), disk (`du`, `lsblk`, `blkid`, `smartctl`, `blockdev`), kernel (`dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`), facts (`host_facts`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
 
 Read `SPEC.md` first before implementing or modifying any tool. SPEC defines arg schemas, validators, env vars, security model, logging events, and architecture. Drift from SPEC = bug.
 
@@ -23,6 +23,7 @@ linux_info_mcp/
     journalctl.py  # journalctl
     perf.py        # iostat, vmstat, free, df, ps
     net.py         # ss, ip_addr, ip_route, lsof_net
+    lldp.py        # lldp_neighbors, lldp_interfaces, lldp_statistics, lldp_chassis
     proc.py        # lsof, pgrep, pidof, top
     disk.py        # du, lsblk, blkid, smartctl
     kernel.py      # dmesg, uname, sysctl
@@ -33,6 +34,7 @@ linux_info_mcp/
     docker.py      # docker_ps, docker_inspect, docker_images, docker_logs
     facts.py       # host_facts
 tests/             # pytest. test_validate, test_ssh, test_server, test_log + tests/tools/*
+tests/e2e/         # layer 3 agent-driven e2e (manifest.py, capture_samples.py, PROMPT.md) — not part of `uv run pytest`
 server.py          # top-level shim → linux_info_mcp.server.main()
 SPEC.md            # authoritative spec
 README.md          # user-facing
@@ -124,8 +126,9 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 6. Define `<TOOL>_SCHEMA` JSON Schema.
 7. Append to module's `TOOLS` list.
 8. Tests under `tests/tools/test_<area>.py`. Cover defaults, every flag, mutual-exclusions, whitelist rejections, injection attempts, truncation propagation.
-9. Update SPEC.md, README.md tool list if user-visible, and AGENTS.md tool count at top.
-10. `uv run pytest -q` must stay green.
+9. **Keep the e2e suite current.** Add the new tool to `tests/e2e/manifest.py` (`TOOL_ARGS`) with universal safe args that succeed on stock Linux (or an error-baseline placeholder). This is mandatory for every new tool/feature, not optional — `capture_samples.py` iterates the full registry, so a tool with no manifest entry is still captured with `{}` but goes undocumented and unexercised with meaningful args.
+10. Update SPEC.md (per-tool section + counts), README.md tool list if user-visible, and AGENTS.md tool count + module list + layout at top.
+11. `uv run pytest -q` must stay green.
 
 ## Configuration env vars (current)
 
@@ -147,4 +150,4 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 - Central SSH wrapper + timing: `linux_info_mcp/ssh.py:run_ssh`
 - Logging setup + ContextVar filter: `linux_info_mcp/log.py:setup_logging`
 - Shared validators: `linux_info_mcp/validate.py`
-- Spec sections per tool: SPEC.md §1–§62
+- Spec sections per tool: SPEC.md §1–§66
