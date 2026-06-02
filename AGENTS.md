@@ -83,6 +83,7 @@ Handlers stay **sync**. The async server entrypoint (`_call_tool` in `server.py`
 - Flag-injection-prone values (e.g. `journalctl --since=`, `--grep=`) use the equals-form so the value can't be misparsed as a separate flag.
 - Positional/glob args (find name, systemctl_list pattern, df paths) go after `--`.
 - Never add raw flag passthrough to a tool. `ps` uses preset modes only.
+- Sudo: if a new tool needs root, prefix it with `sudo_tokens()` (parts builders) or `sudo_prefix()` (f-string builders) from `ssh.py`, inserted right after `LC_ALL=C` and before the privileged binary so a pipeline's later stages stay unprivileged. Per-tool only — never wrap the whole command in `sudo sh -c` (that needs passwordless `sudo sh` = unconstrainable root). Off unless `LINUX_INFO_SUDO` is set. Don't prefix tools that don't need root. The privilege boundary lives in the operator's sudoers, not here.
 
 ### Validators
 
@@ -140,6 +141,7 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap on stdout and stderr. |
 | `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per `hosts` fan-out call. Clamped to [1, 25] (hard ceiling). |
 | `LINUX_INFO_PARALLELISM` | `4` | Fan-out worker threads. Clamped to [1, 25], capped at host count. |
+| `LINUX_INFO_SUDO` | (off) | `1`/`true`/`yes`/`on` prefixes `sudo -n` on privilege-prone tools only. Off by default. |
 | `LINUX_INFO_LOG_FILE` | (empty) | JSONL log path; unset = logging disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL. |
 

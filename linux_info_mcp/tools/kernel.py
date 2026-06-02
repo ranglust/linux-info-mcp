@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 
-from ..ssh import run_ssh
+from ..ssh import run_ssh, sudo_tokens
 from ..validate import (
     reject_unsafe_chars,
     validate_cgroup_path,
@@ -50,7 +50,7 @@ def build_remote_cmd_dmesg(
     """Build LC_ALL=C dmesg command string."""
     if human and time_iso:
         raise ValueError("human is mutually exclusive with time_iso")
-    parts = ["LC_ALL=C", "dmesg", "--no-pager"]
+    parts = ["LC_ALL=C", *sudo_tokens(), "dmesg", "--no-pager"]
     if human:
         parts.append("-H")
     if time_iso:

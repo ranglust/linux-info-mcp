@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 
-from ..ssh import run_ssh
+from ..ssh import run_ssh, sudo_tokens
 from ..validate import (
     reject_unsafe_chars,
     validate_host,
@@ -267,7 +267,7 @@ def _validate_smartctl_mode(mode) -> str:
 
 def build_remote_cmd_smartctl(*, device: str, mode_flag: str) -> str:
     """Build LC_ALL=C smartctl command string."""
-    parts = ["LC_ALL=C", "smartctl", mode_flag, "--", shlex.quote(device)]
+    parts = ["LC_ALL=C", *sudo_tokens(), "smartctl", mode_flag, "--", shlex.quote(device)]
     return " ".join(parts)
 
 

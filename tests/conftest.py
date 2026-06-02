@@ -17,6 +17,7 @@ def _clean_env(monkeypatch):
         "LINUX_INFO_LOG_LEVEL",
         "LINUX_INFO_MAX_HOSTS",
         "LINUX_INFO_PARALLELISM",
+        "LINUX_INFO_SUDO",
     ):
         monkeypatch.delenv(var, raising=False)
     from linux_info_mcp.log import reset_for_tests

@@ -59,6 +59,7 @@ uv run pytest -q
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap on both stdout and stderr. `read_binary` `length` is further capped at `floor((MAX_BYTES - 64) * 3 / 4)` so its base64 stream fits. |
 | `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per multi-host (`hosts`) call. Clamped to `[1, 25]`; 25 is a hard ceiling to prevent an SSH storm. |
 | `LINUX_INFO_PARALLELISM` | `4` | Worker threads for multi-host fan-out. Clamped to `[1, 25]` and never exceeds the host count. |
+| `LINUX_INFO_SUDO` | `` (off) | `1`/`true`/`yes`/`on` prefixes `sudo -n` on privilege-prone tools (see [Privilege](#privilege)). Off by default. Only as safe as your sudoers. |
 | `LINUX_INFO_LOG_FILE` | `` | Absolute path to JSONL log file. Empty / unset = logging disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. `TRACE` adds full tool-call I/O and the remote SSH command/output (verbose). |
 
@@ -77,6 +78,7 @@ uv run pytest -q
         "LINUX_INFO_MAX_BYTES": "1048576",
         "LINUX_INFO_MAX_HOSTS": "10",
         "LINUX_INFO_PARALLELISM": "4",
+        "LINUX_INFO_SUDO": "",
         "LINUX_INFO_LOG_FILE": "",
         "LINUX_INFO_LOG_LEVEL": "INFO"
       }
@@ -125,6 +127,22 @@ Every tool takes either a single `host` (string) or a list of `hosts` (array) �
 ```
 
 `results` follows the input order (deduped). Per-host failures are isolated — one bad host does not abort the others; the overall `tool_call` outcome is then `partial`. Host count is capped by `LINUX_INFO_MAX_HOSTS` (default 10, hard max 25); fan-out runs `LINUX_INFO_PARALLELISM` workers (default 4). A single `host` returns the normal flat dict, unchanged.
+
+## Privilege
+
+The server runs as your SSH login user and never escalates on its own. Tools that need root (`smartctl`, `dmidecode`, `nft_list`, `iptables_list`, `conntrack`, often `dmesg`, `ethtool` for some modes, the `lldp_*` tools) otherwise fail with a permission error.
+
+**Detection (always on):** a failed command whose stderr looks like a permission error gets `privilege_error: true` added to its result, so the agent knows to use a privileged path instead of guessing.
+
+**Escalation (opt-in):** set `LINUX_INFO_SUDO=1` to prefix `sudo -n` (non-interactive) on the privilege-prone tools listed above — and only those. The server is just the mechanism; **what it can actually do is decided entirely by your sudoers.** Scope it tightly:
+
+```
+# /etc/sudoers.d/linux-info  — dedicated read-only diag account
+diag ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/sbin/dmidecode, \
+  /usr/sbin/nft -nn list *, /usr/sbin/iptables -n -v -L *, /usr/sbin/conntrack
+```
+
+`LINUX_INFO_SUDO=1` plus a sloppy sudoers (`NOPASSWD: ALL`) hands an LLM effective root — the server cannot prevent that. Never use a blanket `sudo sh -c`; per-tool `sudo -n` is the only shape a constrained sudoers can lock down. (For Docker, prefer adding the login user to the `docker` group over sudo.)
 
 ## Limitations
 

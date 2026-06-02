@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 
-from ..ssh import run_ssh
+from ..ssh import run_ssh, sudo_tokens
 from ..validate import reject_unsafe_chars, validate_host
 from . import ToolSpec
 from ._common import decode_text as _decode_text
@@ -35,7 +35,7 @@ def _validate_lldp_iface(iface) -> str:
 
 def build_remote_cmd_lldp(*, what: str, fmt: str = "keyvalue", iface: str | None = None) -> str:
     """Build LC_ALL=C lldpcli show command string. `what` is a fixed literal, not user input."""
-    parts = ["LC_ALL=C", "lldpcli", "-f", shlex.quote(fmt), "show", what]
+    parts = ["LC_ALL=C", *sudo_tokens(), "lldpcli", "-f", shlex.quote(fmt), "show", what]
     if iface is not None:
         parts += ["ports", shlex.quote(iface)]
     return " ".join(parts)

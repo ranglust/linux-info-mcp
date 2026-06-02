@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 
-from ..ssh import run_ssh
+from ..ssh import run_ssh, sudo_prefix
 from ..validate import (
     reject_unsafe_chars,
     validate_host,
@@ -343,7 +343,7 @@ def _validate_dmidecode_type(t) -> str:
 
 def build_remote_cmd_dmidecode(*, type: str) -> str:
     """Build LC_ALL=C dmidecode command string."""
-    return f"LC_ALL=C dmidecode -t {shlex.quote(type)}"
+    return f"LC_ALL=C {sudo_prefix()}dmidecode -t {shlex.quote(type)}"
 
 
 def handle_dmidecode(args: dict) -> dict:

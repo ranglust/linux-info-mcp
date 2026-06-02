@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 
-from ..ssh import run_ssh
+from ..ssh import run_ssh, sudo_prefix, sudo_tokens
 from ..validate import reject_unsafe_chars, validate_host
 from . import ToolSpec
 from ._common import decode_text as _decode_text
@@ -453,7 +453,7 @@ def _validate_ethtool_mode(mode) -> str:
 
 def build_remote_cmd_ethtool(*, iface: str, mode_flag: str) -> str:
     """Build LC_ALL=C ethtool command string."""
-    return f"LC_ALL=C ethtool {mode_flag} {shlex.quote(iface)}"
+    return f"LC_ALL=C {sudo_prefix()}ethtool {mode_flag} {shlex.quote(iface)}"
 
 
 def handle_ethtool(args: dict) -> dict:
@@ -516,8 +516,8 @@ def build_remote_cmd_conntrack(*, mode: str = "stats", protocol: str | None = No
     if mode == "stats":
         if protocol is not None:
             raise ValueError("protocol is only valid with mode=list")
-        return "LC_ALL=C conntrack -S"
-    parts = ["LC_ALL=C", "conntrack", "-L"]
+        return f"LC_ALL=C {sudo_prefix()}conntrack -S"
+    parts = ["LC_ALL=C", *sudo_tokens(), "conntrack", "-L"]
     if protocol is not None:
         parts += ["-p", shlex.quote(protocol)]
     return " ".join(parts)
@@ -627,11 +627,12 @@ def _validate_nft_table(table) -> str:
 
 def build_remote_cmd_nft_list(*, family: str | None = None, table: str | None = None) -> str:
     """Build LC_ALL=C nft list command string."""
+    sudo = sudo_prefix()
     if table is None and family is None:
-        return "LC_ALL=C nft -nn list ruleset"
+        return f"LC_ALL=C {sudo}nft -nn list ruleset"
     if table is None or family is None:
         raise ValueError("table and family must be supplied together")
-    return f"LC_ALL=C nft -nn list table {shlex.quote(family)} {shlex.quote(table)}"
+    return f"LC_ALL=C {sudo}nft -nn list table {shlex.quote(family)} {shlex.quote(table)}"
 
 
 def handle_nft_list(args: dict) -> dict:
@@ -694,7 +695,7 @@ def _validate_iptables_family(family) -> str:
 
 def build_remote_cmd_iptables_list(*, binary: str, table: str | None = None) -> str:
     """Build LC_ALL=C iptables/ip6tables list command string."""
-    parts = ["LC_ALL=C", binary, "-n", "-v", "-L"]
+    parts = ["LC_ALL=C", *sudo_tokens(), binary, "-n", "-v", "-L"]
     if table is not None:
         parts += ["-t", shlex.quote(table)]
     return " ".join(parts)

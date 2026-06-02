@@ -1008,12 +1008,37 @@ Local chassis information this host advertises (chassis id, name, description, c
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap applied to both stdout and stderr. Stdout truncation sets `truncated: true`. |
 | `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per `hosts` fan-out call. Clamped to `[1, 25]` (25 is a hard ceiling). Invalid / `<1` falls back to 10. |
 | `LINUX_INFO_PARALLELISM` | `4` | Worker threads for `hosts` fan-out. Clamped to `[1, 25]`; effective workers also capped at the host count. Invalid / `<1` falls back to 4. |
+| `LINUX_INFO_SUDO` | `` (off) | When set to `1`/`true`/`yes`/`on`, privilege-prone tools prefix their remote command with `sudo -n` (see §Privilege escalation). Off by default. Anything else = off. |
 | `LINUX_INFO_LOG_FILE` | `` (empty) | Absolute path to JSONL log file. Empty / unset = logging fully disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | One of `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Unknown values fall back to `INFO`. Only honored when `LINUX_INFO_LOG_FILE` is set. |
 
 ### Grep flag whitelist details
 - Exact-match set: `-i`, `-E`, `-v`, `-n`, `-w`, `-F`.
 - Context flag: `-C<N>` where `N` is a single digit `1`–`9`.
+
+## Privilege handling
+
+Many diagnostics need root (`smartctl`, `dmidecode`, `nft_list`, `iptables_list`, `conntrack`, often `dmesg` under `kernel.dmesg_restrict`, `ethtool` for some modes, the `lldp_*` tools' daemon socket). The server runs as the SSH login user and never escalates on its own. Two independent mechanisms address this:
+
+### Privilege-error detection (always on)
+
+After any handler returns, if `exit_code != 0` and `stderr` matches a privilege signature (`permission denied`, `operation not permitted`, `must be root/superuser`, `are you root`, `you need/must be root`, `requires root/CAP_`, `docker.sock`), the result dict gains `privilege_error: true`. Pure output annotation — no change to what runs, no new attack surface. Applied on both the single-host path and each multi-host per-host result. Lets the caller distinguish "needs privilege" from other failures without guessing.
+
+### Privilege escalation (opt-in, off by default)
+
+`LINUX_INFO_SUDO=1` makes the **privilege-prone** tools prefix their remote command with `sudo -n` (`-n` = non-interactive: it fails fast instead of hanging on a password prompt). The set is exactly those tools that plausibly need root: `smartctl`, `dmidecode`, `dmesg`, `ethtool`, `nft_list`, `iptables_list`, `conntrack`, `lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`. Non-privileged tools are never prefixed (no point, and it would needlessly widen the required sudoers).
+
+**Design:** the server is mechanism; **sudoers is policy.** `sudo -n` is applied per-tool to the specific binary (e.g. `LC_ALL=C sudo -n smartctl ...`), never as a blanket `sudo sh -c '<pipeline>'` — the latter would require passwordless `sudo sh` (effective root, unconstrainable by sudoers) and defeat the point. What the escalation can actually do is bounded entirely by the operator's sudoers file, which they already control. The feature grants nothing the login user is not already granted.
+
+**This is only as safe as your sudoers.** Scope it to specific read-only binaries, e.g.:
+
+```
+# /etc/sudoers.d/linux-info  — dedicated read-only diagnostic account
+diag ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/sbin/dmidecode, \
+  /usr/sbin/nft -nn list *, /usr/sbin/iptables -n -v -L *, /usr/sbin/conntrack
+```
+
+A broad grant (`NOPASSWD: ALL`) combined with `LINUX_INFO_SUDO=1` hands an LLM effective root; the server cannot detect or prevent that.
 
 ## Security Model
 

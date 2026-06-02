@@ -26,6 +26,21 @@ def max_bytes() -> int:
     return int(os.environ.get("LINUX_INFO_MAX_BYTES", str(1024 * 1024)))
 
 
+def sudo_enabled() -> bool:
+    """True when LINUX_INFO_SUDO opts in to non-interactive sudo for privilege-prone tools."""
+    return os.environ.get("LINUX_INFO_SUDO", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def sudo_tokens() -> list[str]:
+    """['sudo', '-n'] when enabled, else []. -n never prompts; it fails fast without a tty."""
+    return ["sudo", "-n"] if sudo_enabled() else []
+
+
+def sudo_prefix() -> str:
+    """'sudo -n ' when enabled, else ''. For f-string builders that don't use a parts list."""
+    return "sudo -n " if sudo_enabled() else ""
+
+
 @dataclass
 class SshResult:
     stdout: bytes

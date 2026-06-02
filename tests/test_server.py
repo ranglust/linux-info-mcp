@@ -1,3 +1,5 @@
+import pytest
+
 from linux_info_mcp.ssh import SshResult
 from linux_info_mcp.tools import files as server_mod
 
@@ -514,3 +516,109 @@ def test_list_tools_description_mentions_multi_host():
         assert "`hosts`" in t.description, f"{t.name} description omits multi-host"
     # original ToolSpec description untouched
     assert "`hosts`" not in srv._TOOLS["read_file"].description
+
+
+# ---------------------------------------------------------------------------
+# privilege-error detection
+# ---------------------------------------------------------------------------
+
+_PRIV_SCHEMA = {
+    "type": "object",
+    "properties": {"host": {"type": "string"}},
+    "required": ["host"],
+}
+
+
+def _priv_tool(stderr: str, exit_code: int = 1):
+    def handler(args):
+        return {
+            "stdout": "",
+            "stderr": stderr,
+            "exit_code": exit_code,
+            "truncated": False,
+            "stderr_truncated": False,
+        }
+
+    return handler
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "smartctl: Permission denied",
+        "dmidecode: Operation not permitted",
+        "you must be root to run this",
+        "must be superuser",
+        "Are you root?",
+        "this requires CAP_NET_ADMIN",
+        "Got permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock",
+    ],
+)
+def test_privilege_error_flagged_single(monkeypatch, stderr):
+    import asyncio
+    import json
+
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.tools import ToolSpec
+
+    monkeypatch.setattr(srv, "_TOOLS", {"t": ToolSpec("t", "", _PRIV_SCHEMA, _priv_tool(stderr))})
+    body = json.loads(asyncio.run(srv._call_tool("t", {"host": "h1"}))[0].text)
+    assert body.get("privilege_error") is True
+
+
+def test_privilege_error_absent_on_other_failure(monkeypatch):
+    import asyncio
+    import json
+
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.tools import ToolSpec
+
+    h = _priv_tool("no such file or directory", exit_code=1)
+    monkeypatch.setattr(srv, "_TOOLS", {"t": ToolSpec("t", "", _PRIV_SCHEMA, h)})
+    body = json.loads(asyncio.run(srv._call_tool("t", {"host": "h1"}))[0].text)
+    assert "privilege_error" not in body
+
+
+def test_privilege_error_absent_on_success(monkeypatch):
+    import asyncio
+    import json
+
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.tools import ToolSpec
+
+    # exit 0 but stderr mentions permission — must NOT flag (no failure).
+    h = _priv_tool("permission denied", exit_code=0)
+    monkeypatch.setattr(srv, "_TOOLS", {"t": ToolSpec("t", "", _PRIV_SCHEMA, h)})
+    body = json.loads(asyncio.run(srv._call_tool("t", {"host": "h1"}))[0].text)
+    assert "privilege_error" not in body
+
+
+def test_privilege_error_flagged_multi_host_per_host(monkeypatch):
+    import asyncio
+    import json
+
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.tools import ToolSpec
+
+    def handler(args):
+        if args["host"] == "denied":
+            return {
+                "stdout": "",
+                "stderr": "Permission denied",
+                "exit_code": 1,
+                "truncated": False,
+                "stderr_truncated": False,
+            }
+        return {
+            "stdout": "ok",
+            "stderr": "",
+            "exit_code": 0,
+            "truncated": False,
+            "stderr_truncated": False,
+        }
+
+    monkeypatch.setattr(srv, "_TOOLS", {"t": ToolSpec("t", "", _PRIV_SCHEMA, handler)})
+    body = json.loads(asyncio.run(srv._call_tool("t", {"hosts": ["ok", "denied"]}))[0].text)
+    by_host = {r["host"]: r for r in body["results"]}
+    assert by_host["denied"].get("privilege_error") is True
+    assert "privilege_error" not in by_host["ok"]

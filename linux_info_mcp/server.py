@@ -8,6 +8,7 @@ import copy
 import importlib
 import json
 import pkgutil
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -28,6 +29,33 @@ from .validate import (
 _log = get_logger("server")
 
 server = Server("linux-info-mcp")
+
+# Stderr signatures of a command that failed because it lacked privilege. Used to
+# annotate results with privilege_error so the caller knows a privileged login (or
+# LINUX_INFO_SUDO + a scoped sudoers) is needed, rather than guessing.
+_PRIV_ERR_RE = re.compile(
+    r"permission denied"
+    r"|operation not permitted"
+    r"|must be (?:root|superuser)"
+    r"|are you root"
+    r"|you (?:need|must) be root"
+    r"|need to be root"
+    r"|require[s]? (?:root|cap_)"
+    r"|docker\.sock",
+    re.IGNORECASE,
+)
+
+
+def _annotate_privilege(result: dict) -> dict:
+    """Set privilege_error=True when a non-zero result's stderr looks like a permission failure."""
+    if not isinstance(result, dict):
+        return result
+    ec = result.get("exit_code")
+    if isinstance(ec, int) and ec != 0:
+        stderr = result.get("stderr")
+        if isinstance(stderr, str) and _PRIV_ERR_RE.search(stderr):
+            result["privilege_error"] = True
+    return result
 
 
 def _discover_tools() -> dict[str, ToolSpec]:
@@ -120,7 +148,7 @@ def _run_handler_for_host(handler, base_args: dict, host: str) -> dict:
         return {"host": host, "error": f"{type(e).__name__}: {e}", "outcome": "handler_error"}
     if not isinstance(r, dict):
         return {"host": host, "error": "handler returned non-dict", "outcome": "handler_error"}
-    return {"host": host, **r}
+    return {"host": host, **_annotate_privilege(r)}
 
 
 def _run_multi_host(handler, base_args: dict, hosts: list[str]) -> list[dict]:
@@ -196,6 +224,7 @@ async def _call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     try:
                         result = await asyncio.to_thread(spec.handler, args)
                         if isinstance(result, dict):
+                            _annotate_privilege(result)
                             exit_code = result.get("exit_code")
                             if isinstance(exit_code, int) and exit_code != 0:
                                 outcome = "nonzero"
