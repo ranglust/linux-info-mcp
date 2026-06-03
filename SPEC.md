@@ -955,10 +955,12 @@ Gather host facts in a **single SSH round-trip** by running a fixed bundled shel
 | `dmi_vendor` | `str \| None` | `/sys/class/dmi/id/sys_vendor` |
 | `dmi_product` | `str \| None` | `/sys/class/dmi/id/product_name` |
 | `is_virtual` | `bool` | `True` if hypervisor ≠ none OR DMI matches VM signature |
-| `capabilities` | `dict[str, bool]` | Per-tool `command -v` result (docker, podman, systemctl, nft, conntrack, ethtool, smartctl, numastat, slabtop) |
+| `capabilities` | `dict[str, bool]` | Per-binary `command -v` result. Covers the optional binaries behind tool groups so a caller can skip a round-trip when one is absent (see mapping below). |
 | `uptime_s` | `int \| None` | Integer seconds from `/proc/uptime` |
 | `now_utc` | `str \| None` | ISO-8601 UTC timestamp |
 | `whoami` | `str \| None` | Effective username |
+
+**Capability → tool mapping.** `capabilities` probes: `docker`/`podman` (docker_* tools), `systemctl` (systemctl_*, systemd_analyze), `nft` (nft_list), `iptables` (iptables_list), `conntrack` (conntrack), `ethtool` (ethtool), `tc` (tc_qdisc), `ss` (ss), `lsof` (lsof, lsof_net), `smartctl` (smartctl), `blockdev` (blockdev), `lsblk` (lsblk), `numastat` (numastat), `slabtop` (slabtop), `lldpctl` (lldp_*), `chronyc` (chronyc), `dmidecode` (dmidecode), `iostat` (iostat), `vmstat` (vmstat), `dpkg` (dpkg_list, apt_list_installed), `rpm` (rpm_list). A `False` entry means that tool will fail with `not_found`; call `host_facts` first to avoid the round-trip.
 
 ---
 

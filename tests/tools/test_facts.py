@@ -67,6 +67,29 @@ def test_host_facts_builder_is_fixed_and_quoted():
     assert "===END===" in cmd
 
 
+def test_host_facts_probes_expanded_capabilities():
+    # The capability probe must cover the optional binaries behind each tool group
+    # so callers can skip a round-trip when the binary is absent.
+    cmd = mod.build_remote_cmd_host_facts()
+    for tool in (
+        "lldpctl",
+        "chronyc",
+        "dmidecode",
+        "iostat",
+        "vmstat",
+        "ss",
+        "lsof",
+        "tc",
+        "iptables",
+        "blockdev",
+        "dpkg",
+        "rpm",
+        "lsblk",
+    ):
+        assert tool in mod._CAP_TOOLS, f"{tool} missing from _CAP_TOOLS"
+        assert tool in cmd
+
+
 # ---- parser ----
 
 

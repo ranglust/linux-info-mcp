@@ -9,16 +9,32 @@ from ..validate import validate_host
 from . import ToolSpec
 from ._common import decode_text as _decode_text
 
+# Optional binaries behind tool groups. Surfaced as facts.capabilities so a caller
+# can skip a round-trip to a tool whose binary is absent. Curated to genuinely
+# optional binaries (no always-present coreutils).
 _CAP_TOOLS = [
     "docker",
     "podman",
     "systemctl",
     "nft",
+    "iptables",
     "conntrack",
     "ethtool",
+    "tc",
+    "ss",
+    "lsof",
     "smartctl",
+    "blockdev",
+    "lsblk",
     "numastat",
     "slabtop",
+    "lldpctl",
+    "chronyc",
+    "dmidecode",
+    "iostat",
+    "vmstat",
+    "dpkg",
+    "rpm",
 ]
 
 _VM_DMI_SIGNATURES = (
@@ -183,7 +199,10 @@ TOOLS: list[ToolSpec] = [
         description=(
             "Gather host facts in one SSH round-trip: distro, kernel/arch, nproc, mem, "
             "virtualization (hypervisor/container/DMI + derived is_virtual), tool capabilities, "
-            "uptime, now_utc, whoami. Returns {facts, stdout, stderr, exit_code, truncated}."
+            "uptime, now_utc, whoami. Returns {facts, stdout, stderr, exit_code, truncated}. "
+            "Call this first and check facts.capabilities (a tool->bool map of optional "
+            "binaries like iostat, lldpctl, chronyc, dmidecode, smartctl) to skip a round-trip "
+            "to a tool whose binary is absent."
         ),
         input_schema=HOST_FACTS_SCHEMA,
         handler=handle_host_facts,
