@@ -3,7 +3,7 @@
 ![tests](https://github.com/ranglust/linux-info-mcp/actions/workflows/tests.yml/badge.svg)
 [![codecov](https://codecov.io/gh/ranglust/linux-info-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/ranglust/linux-info-mcp)
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. 66 tools across 15 modules:
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. 67 tools across 16 modules:
 
 - files: `read_file`, `find_files`, `read_binary`
 - systemctl: `systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`
@@ -20,6 +20,7 @@ MCP server that runs read-only diagnostic commands on remote hosts via SSH. 66 t
 - fs: `mount`, `findmnt`, `stat_fs`
 - docker: `docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`
 - facts: `host_facts`
+- triage: `triage`
 
 ## Project context for agents
 
@@ -60,6 +61,7 @@ uv run pytest -q
 | `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per multi-host (`hosts`) call. Clamped to `[1, 25]`; 25 is a hard ceiling to prevent an SSH storm. |
 | `LINUX_INFO_PARALLELISM` | `4` | Worker threads for multi-host fan-out. Clamped to `[1, 25]` and never exceeds the host count. |
 | `LINUX_INFO_SUDO` | `` (off) | `1`/`true`/`yes`/`on` prefixes `sudo -n` on privilege-prone tools (see [Privilege](#privilege)). Off by default. Only as safe as your sudoers. |
+| `LINUX_INFO_OUTPUT_MODE` | `` (unset) | Locks response shape to `raw`/`parsed`/`both`, overriding the per-call `output_mode` arg (see [Output modes](#output-modes)). Invalid value → `validation_error`. |
 | `LINUX_INFO_LOG_FILE` | `` | Absolute path to JSONL log file. Empty / unset = logging disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. `TRACE` adds full tool-call I/O and the remote SSH command/output (verbose). |
 
@@ -79,6 +81,7 @@ uv run pytest -q
         "LINUX_INFO_MAX_HOSTS": "10",
         "LINUX_INFO_PARALLELISM": "4",
         "LINUX_INFO_SUDO": "",
+        "LINUX_INFO_OUTPUT_MODE": "",
         "LINUX_INFO_LOG_FILE": "",
         "LINUX_INFO_LOG_LEVEL": "INFO"
       }
@@ -127,6 +130,19 @@ Every tool takes either a single `host` (string) or a list of `hosts` (array) �
 ```
 
 `results` follows the input order (deduped). Per-host failures are isolated — one bad host does not abort the others; the overall `tool_call` outcome is then `partial`. Host count is capped by `LINUX_INFO_MAX_HOSTS` (default 10, hard max 25); fan-out runs `LINUX_INFO_PARALLELISM` workers (default 4). A single `host` returns the normal flat dict, unchanged.
+
+## Output modes
+
+Pass `output_mode` to control the response shape: `raw` (default, `stdout` text), `parsed` (structured object, `stdout` dropped), or `both`. `LINUX_INFO_OUTPUT_MODE` locks it server-side, overriding the arg. Tools with a parser (currently `df`, `free`) populate `parsed`; others report `parse_status: "unsupported"` and fall back to raw. Truncated or non-zero output is never parsed.
+
+```json
+// df with {"host": "h1", "output_mode": "parsed"}
+{"parsed": [
+  {"fs": "/dev/sda1", "blocks_1k": 41252336, "used_1k": 8765432,
+   "avail_1k": 30387654, "use_pct": 23, "mount": "/"}
+], "stderr": "", "exit_code": 0, "truncated": false,
+ "stderr_truncated": false, "parse_status": "ok"}
+```
 
 ## Privilege
 

@@ -21,8 +21,11 @@ TOOL_ARGS: dict[str, list[dict]] = {
     "systemctl_list": [{}],
     "journalctl": [{"lines": 50}],
     # perf
-    "df": [{}],
+    "df": [{}, {"output_mode": "parsed"}],
+    "free": [{}, {"output_mode": "parsed"}],
     "ps": [{}],
+    # triage meta-tool (host-only, safe on stock Linux)
+    "triage": [{}],
     # net
     # proc
     "pgrep": [{"pattern": "systemd"}],

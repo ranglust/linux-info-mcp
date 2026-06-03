@@ -4,7 +4,7 @@ Operating notes for AI coding agents working in this repo. Authoritative spec is
 
 ## What this is
 
-MCP (Model Context Protocol) server, Python, SSH-based read-only diagnostics. Per call targets a single `host` or a bounded parallel `hosts` fan-out. Exposes 66 tools today across 15 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`), lldp (`lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`), proc (`lsof`, `pgrep`, `pidof`, `top`, `proc_limits`), disk (`du`, `lsblk`, `blkid`, `smartctl`, `blockdev`), kernel (`dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`), facts (`host_facts`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
+MCP (Model Context Protocol) server, Python, SSH-based read-only diagnostics. Per call targets a single `host` or a bounded parallel `hosts` fan-out. Exposes 67 tools today across 16 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`), lldp (`lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`), proc (`lsof`, `pgrep`, `pidof`, `top`, `proc_limits`), disk (`du`, `lsblk`, `blkid`, `smartctl`, `blockdev`), kernel (`dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`), facts (`host_facts`), triage (`triage`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
 
 Read `SPEC.md` first before implementing or modifying any tool. SPEC defines arg schemas, validators, env vars, security model, logging events, and architecture. Drift from SPEC = bug.
 
@@ -18,6 +18,7 @@ linux_info_mcp/
   log.py           # JSON file logging, TRACE level, ContextVar correlation
   tools/
     __init__.py    # ToolSpec dataclass (name/description/input_schema/handler)
+    _parsers.py    # reference output parsers (parse_df, parse_free); not auto-discovered
     files.py       # read_file, find_files, read_binary
     systemctl.py   # systemctl_status, systemctl_list
     journalctl.py  # journalctl
@@ -33,6 +34,7 @@ linux_info_mcp/
     fs.py          # mount, findmnt, stat_fs
     docker.py      # docker_ps, docker_inspect, docker_images, docker_logs
     facts.py       # host_facts
+    triage.py      # triage (one-round-trip health summary)
 tests/             # pytest. test_validate, test_ssh, test_server, test_log + tests/tools/*
 tests/e2e/         # layer 3 agent-driven e2e (manifest.py, capture_samples.py, PROMPT.md) — not part of `uv run pytest`
 server.py          # top-level shim → linux_info_mcp.server.main()
@@ -65,7 +67,9 @@ Python: `uv` only. Never `python3`/`pip3`.
 
 ### Per-tool module pattern
 
-Each `tools/<area>.py` exports `TOOLS: list[ToolSpec]`. A ToolSpec is `(name, description, input_schema, handler)`. `server.py` discovers them via `pkgutil.iter_modules`. Submodules whose name starts with `_` are skipped. Names must be unique and non-empty.
+Each `tools/<area>.py` exports `TOOLS: list[ToolSpec]`. A ToolSpec is `(name, description, input_schema, handler, parser=None)`. `server.py` discovers them via `pkgutil.iter_modules`. Submodules whose name starts with `_` are skipped. Names must be unique and non-empty.
+
+`parser` is an optional `Callable[[str], object]` that turns a tool's `stdout` into a structured value for `output_mode=parsed|both`. It is pure (no SSH), lives in `tools/_parsers.py` (not auto-discovered), and is unit-tested in `tests/tools/test_parsers.py`. Central plumbing in `server.py` (`apply_output_mode`) handles `parse_status`, drops `stdout` in `parsed` mode, and never parses truncated/non-zero output — tools just attach a `parser=`. See SPEC.md §Output modes.
 
 A handler receives a `dict`, validates it, builds the remote command string, calls `run_ssh(host, remote_cmd)`, and returns a dict with shape `{stdout, stderr, exit_code, truncated, stderr_truncated}` (or, for `read_binary`, `{data_base64, bytes_read, stderr, exit_code, truncated}`; for `host_facts`, adds a parsed `facts` key).
 
@@ -142,6 +146,7 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 | `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per `hosts` fan-out call. Clamped to [1, 25] (hard ceiling). |
 | `LINUX_INFO_PARALLELISM` | `4` | Fan-out worker threads. Clamped to [1, 25], capped at host count. |
 | `LINUX_INFO_SUDO` | (off) | `1`/`true`/`yes`/`on` prefixes `sudo -n` on privilege-prone tools only. Off by default. |
+| `LINUX_INFO_OUTPUT_MODE` | (unset) | Locks response shape `raw`/`parsed`/`both`, overriding per-call `output_mode`. Strict lowercase; invalid → `validation_error`. |
 | `LINUX_INFO_LOG_FILE` | (empty) | JSONL log path; unset = logging disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL. |
 

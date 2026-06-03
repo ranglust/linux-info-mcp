@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 66 tools across 15 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 67 tools across 16 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -28,6 +28,28 @@ Every tool accepts either a single `host` (string) or a list of `hosts` (array o
 - Each host is validated independently (allowlist, leading-dash, NUL/newline) exactly as the single-host path.
 
 Per-tool sections below list `host: str (required)` for brevity; read it as "`host` or `hosts` (one required)".
+
+## Output modes
+
+Every tool accepts an optional `output_mode` arg controlling response shape:
+
+- `raw` (default) — current behavior: `stdout` text, no change.
+- `parsed` — structured object under `parsed`; `stdout` is dropped to avoid doubling the payload.
+- `both` — keep `stdout` and add `parsed`.
+
+Resolution: `LINUX_INFO_OUTPUT_MODE` (env), if set, locks the mode and overrides the per-call arg. Otherwise the arg wins, else `raw`. The value is strict lowercase (`raw`/`parsed`/`both`); anything else — in the arg or the env — is a `validation_error` (the arg is validated even when the env overrides it). The mode applies per-host on `hosts` fan-out.
+
+Parsing is **optional per tool** (`ToolSpec.parser`). When `output_mode` is non-`raw`, the result carries `parse_status`:
+
+| `parse_status` | Meaning | `stdout` kept? |
+|----------------|---------|----------------|
+| `ok` | Parsed successfully; `parsed` populated. | only in `both` |
+| `unsupported` | Tool has no parser (or `stdout` not a string). | yes |
+| `skipped_nonzero` | Command exited non-zero; output not parsed. | yes |
+| `skipped_truncated` | Output hit `LINUX_INFO_MAX_BYTES`; not parsed (partial data would mislead). | yes |
+| `error: <ExcName>` | Parser raised; exception type recorded. | yes |
+
+`raw` mode sets no `parse_status` (zero behavior change). v1 ships reference parsers for `df` (list of mount rows) and `free` (list of samples, each `{mem, swap}`); `interval`/`count` multi-sample `free` parses to one entry per sample. Native-JSON tools (`lsblk`, `findmnt`, etc.) are out of scope — they emit JSON only when their own flag is set.
 
 ## Tools
 
@@ -996,6 +1018,38 @@ Local chassis information this host advertises (chassis id, name, description, c
 
 **Returns** `{stdout, stderr, exit_code, truncated, stderr_truncated}`.
 
+### 67. `triage`
+
+One SSH round-trip health summary. Runs a fixed bundled probe script (no user interpolation, like §62 `host_facts`) and returns a prioritized `warnings` list plus a `facts` bundle. Read-only; each probe degrades to empty via `2>/dev/null || true` when its source is restricted or absent.
+
+**Args**
+- `host: str` — required. (No other args in v1; thresholds are fixed.)
+
+**Behavior**
+- Remote command: `LC_ALL=C sh -c '<script>'` bundling: `/proc/loadavg`, `nproc`, filtered `/proc/meminfo` (`MemTotal`/`MemAvailable`/`SwapTotal`/`SwapFree`), `df -P -l -x tmpfs -x devtmpfs`, `systemctl --failed --no-legend --plain`, `/proc/pressure/{cpu,memory,io}`, and recent `dmesg` OOM/kill lines.
+- Parsing is pure and never raises; missing sections yield `null`/empty fields, not errors.
+
+**Thresholds** (warning kinds): `high_load` (load1/nproc ≥ 1.5, `crit` ≥ 4.0), `low_memory` (MemAvailable < 10% of total, `crit` < 5%), `swap_pressure` (swap > 50% used), `disk_full` (mount ≥ 90%, `crit` ≥ 95%; one per mount), `failed_units` (any failed unit), `pressure` (PSI some avg10 > 20 per resource), `oom_recent` (recent OOM/kill lines).
+
+**Returns**
+```
+{
+  "warnings": [ {"kind": "...", "severity": "warn"|"crit", "detail": "..."} ],
+  "facts": {
+    "load1": float|null, "load5": float|null, "load15": float|null, "nproc": int|null,
+    "mem_total_kb": int|null, "mem_available_kb": int|null,
+    "swap_total_kb": int|null, "swap_free_kb": int|null,
+    "disks": [ {"mount": str, "use_pct": int} ],
+    "failed_units": [str],
+    "psi": {"cpu": float|null, "memory": float|null, "io": float|null},
+    "oom_recent": [str]
+  },
+  "stdout": "...", "stderr": "...", "exit_code": 0,
+  "truncated": false, "stderr_truncated": false
+}
+```
+Empty `warnings` = healthy.
+
 ---
 
 ## Configuration (environment variables)
@@ -1009,6 +1063,7 @@ Local chassis information this host advertises (chassis id, name, description, c
 | `LINUX_INFO_MAX_HOSTS` | `10` | Max hosts per `hosts` fan-out call. Clamped to `[1, 25]` (25 is a hard ceiling). Invalid / `<1` falls back to 10. |
 | `LINUX_INFO_PARALLELISM` | `4` | Worker threads for `hosts` fan-out. Clamped to `[1, 25]`; effective workers also capped at the host count. Invalid / `<1` falls back to 4. |
 | `LINUX_INFO_SUDO` | `` (off) | When set to `1`/`true`/`yes`/`on`, privilege-prone tools prefix their remote command with `sudo -n` (see §Privilege escalation). Off by default. Anything else = off. |
+| `LINUX_INFO_OUTPUT_MODE` | `` (unset) | Locks response shape to `raw`/`parsed`/`both`, overriding the per-call `output_mode` arg (see §Output modes). Strict lowercase; invalid value → `validation_error`. |
 | `LINUX_INFO_LOG_FILE` | `` (empty) | Absolute path to JSONL log file. Empty / unset = logging fully disabled. |
 | `LINUX_INFO_LOG_LEVEL` | `INFO` | One of `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Unknown values fall back to `INFO`. Only honored when `LINUX_INFO_LOG_FILE` is set. |
 
@@ -1078,6 +1133,7 @@ linux-info-mcp/
       fs.py                  # mount, findmnt, stat_fs
       docker.py              # docker_ps, docker_inspect, docker_images, docker_logs
       facts.py               # host_facts
+      triage.py              # triage
   tests/
     conftest.py
     test_validate.py
@@ -1109,7 +1165,7 @@ linux-info-mcp/
   SECURITY.md                # threat model + reporting
 ```
 
-66 tools across 15 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
+67 tools across 16 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 
