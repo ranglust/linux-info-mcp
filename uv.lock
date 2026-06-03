@@ -389,7 +389,7 @@ wheels = [
 
 [[package]]
 name = "linux-info-mcp"
-version = "0.0.1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },
