@@ -148,7 +148,7 @@ Pass `output_mode` to control the response shape: `raw` (default, `stdout` text)
 
 The server runs as your SSH login user and never escalates on its own. Tools that need root (`smartctl`, `dmidecode`, `nft_list`, `iptables_list`, `conntrack`, often `dmesg`, `ethtool` for some modes, the `lldp_*` tools) otherwise fail with a permission error.
 
-**Detection (always on):** a failed command whose stderr looks like a permission error gets `privilege_error: true` added to its result, so the agent knows to use a privileged path instead of guessing.
+**Detection (always on):** a failed command whose stderr looks like a permission error gets `privilege_error: true` added to its result, so the agent knows to use a privileged path instead of guessing. Every result also carries `error_kind` (`ok`/`timeout`/`auth`/`dns`/`unreachable`/`not_found`/`privilege`/`nonzero`) so the agent can pick retry vs switch-host vs escalate vs give-up.
 
 **Escalation (opt-in):** set `LINUX_INFO_SUDO=1` to prefix `sudo -n` (non-interactive) on the privilege-prone tools listed above — and only those. The server is just the mechanism; **what it can actually do is decided entirely by your sudoers.** Scope it tightly:
 

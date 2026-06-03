@@ -1079,6 +1079,10 @@ Many diagnostics need root (`smartctl`, `dmidecode`, `nft_list`, `iptables_list`
 
 After any handler returns, if `exit_code != 0` and `stderr` matches a privilege signature (`permission denied`, `operation not permitted`, `must be root/superuser`, `are you root`, `you need/must be root`, `requires root/CAP_`, `docker.sock`), the result dict gains `privilege_error: true`. Pure output annotation — no change to what runs, no new attack surface. Applied on both the single-host path and each multi-host per-host result. Lets the caller distinguish "needs privilege" from other failures without guessing.
 
+### Error taxonomy (always on)
+
+Every result with an integer `exit_code` also gains `error_kind`, normalized from exit code + stderr into one of: `ok` (exit 0), `timeout` (exit 124), `auth`, `dns`, `unreachable`, `not_found` (exit 127 or `command not found`), `privilege`, or `nonzero` (any other failure). Precedence is `ok → timeout → auth → dns → unreachable → not_found → privilege → nonzero`, so SSH-transport failures are classified before remote-command failures. Pure central annotation (no per-tool code); applied on the single-host path and each per-host result. `error_kind == "privilege"` is the same condition as `privilege_error` (kept for back-compat). Lets the caller decide retry vs switch-host vs escalate vs give-up.
+
 ### Privilege escalation (opt-in, off by default)
 
 `LINUX_INFO_SUDO=1` makes the **privilege-prone** tools prefix their remote command with `sudo -n` (`-n` = non-interactive: it fails fast instead of hanging on a password prompt). The set is exactly those tools that plausibly need root: `smartctl`, `dmidecode`, `dmesg`, `ethtool`, `nft_list`, `iptables_list`, `conntrack`, `lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`. Non-privileged tools are never prefixed (no point, and it would needlessly widen the required sudoers).

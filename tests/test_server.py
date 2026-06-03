@@ -4,6 +4,161 @@ from linux_info_mcp.ssh import SshResult
 from linux_info_mcp.tools import files as server_mod
 
 # ---------------------------------------------------------------------------
+# error_kind taxonomy: classify_error
+# ---------------------------------------------------------------------------
+
+
+def test_classify_error_ok():
+    from linux_info_mcp.server import classify_error
+
+    assert classify_error(0, "") == "ok"
+    assert classify_error(0, "permission denied but exit 0") == "ok"
+
+
+def test_classify_error_timeout():
+    from linux_info_mcp.server import classify_error
+
+    assert classify_error(124, "anything\n[timeout]") == "timeout"
+
+
+def test_classify_error_auth():
+    from linux_info_mcp.server import classify_error
+
+    for s in (
+        "Permission denied (publickey).",
+        "ssh: Authentication failed.",
+        "Received disconnect: Too many authentication failures",
+        "Host key verification failed.",
+    ):
+        assert classify_error(255, s) == "auth"
+
+
+def test_classify_error_dns():
+    from linux_info_mcp.server import classify_error
+
+    for s in (
+        "ssh: Could not resolve hostname nope: Name or service not known",
+        "nodename nor servname provided, or not known",
+        "Temporary failure in name resolution",
+    ):
+        assert classify_error(255, s) == "dns"
+
+
+def test_classify_error_unreachable():
+    from linux_info_mcp.server import classify_error
+
+    for s in (
+        "ssh: connect to host h port 22: Connection refused",
+        "No route to host",
+        "Network is unreachable",
+        "Connection timed out",
+    ):
+        assert classify_error(255, s) == "unreachable"
+
+
+def test_classify_error_not_found_by_exit_127():
+    from linux_info_mcp.server import classify_error
+
+    assert classify_error(127, "") == "not_found"
+
+
+def test_classify_error_not_found_by_stderr():
+    from linux_info_mcp.server import classify_error
+
+    assert classify_error(1, "bash: iostat: command not found") == "not_found"
+
+
+def test_classify_error_privilege():
+    from linux_info_mcp.server import classify_error
+
+    assert classify_error(1, "dmidecode: Operation not permitted") == "privilege"
+
+
+def test_classify_error_generic_nonzero():
+    from linux_info_mcp.server import classify_error
+
+    assert classify_error(1, "some unrelated failure") == "nonzero"
+
+
+def test_classify_error_auth_beats_privilege():
+    from linux_info_mcp.server import classify_error
+
+    # "Permission denied (..." matches both auth and the privilege regex; auth wins.
+    assert classify_error(255, "Permission denied (publickey).") == "auth"
+
+
+def test_call_tool_single_host_carries_error_kind(monkeypatch):
+    import asyncio
+    import json
+
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.tools import ToolSpec
+
+    schema = {"type": "object", "properties": {"host": {"type": "string"}}, "required": ["host"]}
+
+    def handler(args):
+        return {
+            "stdout": "ok",
+            "stderr": "",
+            "exit_code": 0,
+            "truncated": False,
+            "stderr_truncated": False,
+        }
+
+    monkeypatch.setattr(srv, "_TOOLS", {"t": ToolSpec("t", "", schema, handler)})
+    body = json.loads(asyncio.run(srv._call_tool("t", {"host": "h1"}))[0].text)
+    assert body["error_kind"] == "ok"
+
+
+def test_call_tool_privilege_sets_both_error_kind_and_flag(monkeypatch):
+    import asyncio
+    import json
+
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.tools import ToolSpec
+
+    schema = {"type": "object", "properties": {"host": {"type": "string"}}, "required": ["host"]}
+
+    def handler(args):
+        return {
+            "stdout": "",
+            "stderr": "Operation not permitted",
+            "exit_code": 1,
+            "truncated": False,
+            "stderr_truncated": False,
+        }
+
+    monkeypatch.setattr(srv, "_TOOLS", {"t": ToolSpec("t", "", schema, handler)})
+    body = json.loads(asyncio.run(srv._call_tool("t", {"host": "h1"}))[0].text)
+    assert body["error_kind"] == "privilege"
+    assert body["privilege_error"] is True
+
+
+def test_call_tool_multi_host_each_carries_error_kind(monkeypatch):
+    import asyncio
+    import json
+
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.tools import ToolSpec
+
+    schema = {"type": "object", "properties": {"host": {"type": "string"}}, "required": ["host"]}
+
+    def handler(args):
+        return {
+            "stdout": "x",
+            "stderr": "",
+            "exit_code": 0,
+            "truncated": False,
+            "stderr_truncated": False,
+        }
+
+    monkeypatch.setattr(srv, "_TOOLS", {"t": ToolSpec("t", "", schema, handler)})
+    body = json.loads(asyncio.run(srv._call_tool("t", {"hosts": ["h1", "h2"]}))[0].text)
+    for r in body["results"]:
+        assert r["error_kind"] == "ok"
+
+
+# ---------------------------------------------------------------------------
 # ToolSpec.parser field (output_mode)
 # ---------------------------------------------------------------------------
 

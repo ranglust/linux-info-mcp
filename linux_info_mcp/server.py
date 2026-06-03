@@ -47,14 +47,53 @@ _PRIV_ERR_RE = re.compile(
 )
 
 
+_ERR_AUTH_RE = re.compile(
+    r"permission denied \(|authentication failed|too many authentication failures"
+    r"|publickey,|host key verification failed",
+    re.IGNORECASE,
+)
+_ERR_DNS_RE = re.compile(
+    r"could not resolve hostname|name or service not known"
+    r"|nodename nor servname|temporary failure in name resolution",
+    re.IGNORECASE,
+)
+_ERR_UNREACH_RE = re.compile(
+    r"connection refused|no route to host|network is unreachable"
+    r"|connection timed out|operation timed out|connection closed",
+    re.IGNORECASE,
+)
+_ERR_NOTFOUND_RE = re.compile(r"command not found", re.IGNORECASE)
+
+
+def classify_error(exit_code, stderr) -> str:
+    """Normalize an SSH/command failure into a single taxonomy from exit code + stderr."""
+    if isinstance(exit_code, int) and exit_code == 0:
+        return "ok"
+    if exit_code == 124:
+        return "timeout"
+    s = stderr if isinstance(stderr, str) else ""
+    if _ERR_AUTH_RE.search(s):
+        return "auth"
+    if _ERR_DNS_RE.search(s):
+        return "dns"
+    if _ERR_UNREACH_RE.search(s):
+        return "unreachable"
+    if exit_code == 127 or _ERR_NOTFOUND_RE.search(s):
+        return "not_found"
+    if _PRIV_ERR_RE.search(s):
+        return "privilege"
+    return "nonzero"
+
+
 def _annotate_privilege(result: dict) -> dict:
-    """Set privilege_error=True when a non-zero result's stderr looks like a permission failure."""
+    """Set error_kind from the taxonomy, plus privilege_error for permission failures."""
     if not isinstance(result, dict):
         return result
     ec = result.get("exit_code")
-    if isinstance(ec, int) and ec != 0:
-        stderr = result.get("stderr")
-        if isinstance(stderr, str) and _PRIV_ERR_RE.search(stderr):
+    stderr = result.get("stderr")
+    if isinstance(ec, int):
+        result["error_kind"] = classify_error(ec, stderr)
+        if ec != 0 and isinstance(stderr, str) and _PRIV_ERR_RE.search(stderr):
             result["privilege_error"] = True
     return result
 
