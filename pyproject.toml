@@ -1,6 +1,6 @@
 [project]
 name = "linux-info-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for read-only remote diagnostics over SSH"
 requires-python = ">=3.11"
 license = "MIT"
