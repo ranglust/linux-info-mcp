@@ -54,7 +54,8 @@ uv run pytest -q
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `LINUX_INFO_SSH_CMD` | `ssh` | Command + flags parsed via `shlex.split` (shell-style: quotes/escapes honored); becomes argv prefix. Example: `ssh -F /home/me/.ssh/config -o ConnectTimeout=5`. |
+| `LINUX_INFO_SSH_CMD` | `ssh` | Command + flags parsed via `shlex.split` (shell-style: quotes/escapes honored); becomes argv prefix. Example: `ssh -F /home/me/.ssh/config -o ConnectTimeout=5`. When set, you own the full argv (no mux auto-injected). |
+| `LINUX_INFO_SSH_MUX` | on | When `LINUX_INFO_SSH_CMD` is unset, default `ssh` gets OpenSSH connection multiplexing (`ControlMaster=auto`, `ControlPath=$TMPDIR/lim-%C`, `ControlPersist=60s`) so repeated calls reuse one connection instead of paying a handshake each time. Set `0`/`false`/`no`/`off` to disable. |
 | `LINUX_INFO_HOSTS` | `` | Comma-separated allowlist of exact hostnames. Empty = any host. |
 | `LINUX_INFO_TIMEOUT` | `30` | Seconds before subprocess kill. On timeout: `exit_code=124`, `[timeout]` appended to `stderr`. |
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap on both stdout and stderr. `read_binary` `length` is further capped at `floor((MAX_BYTES - 64) * 3 / 4)` so its base64 stream fits. |
@@ -75,6 +76,7 @@ uv run pytest -q
       "args": ["run", "--directory", "/abs/path/to/linux-info-mcp", "python", "server.py"],
       "env": {
         "LINUX_INFO_SSH_CMD": "ssh",
+        "LINUX_INFO_SSH_MUX": "on",
         "LINUX_INFO_HOSTS": "",
         "LINUX_INFO_TIMEOUT": "30",
         "LINUX_INFO_MAX_BYTES": "1048576",

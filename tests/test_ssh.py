@@ -92,6 +92,45 @@ def _patch_popen(monkeypatch, captured: dict | None = None, **proc_kwargs):
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
 
+# _ssh_argv — connection-mux default
+
+
+def test_ssh_argv_default_has_mux(monkeypatch):
+    monkeypatch.delenv("LINUX_INFO_SSH_CMD", raising=False)
+    monkeypatch.delenv("LINUX_INFO_SSH_MUX", raising=False)
+    argv = ssh_mod._ssh_argv()
+    assert argv[0] == "ssh"
+    assert "ControlMaster=auto" in argv
+    assert "ControlPersist=60s" in argv
+    assert any(a.startswith("ControlPath=") for a in argv)
+
+
+def test_ssh_argv_controlpath_uses_hash_token_in_tmpdir(monkeypatch):
+    import tempfile
+
+    monkeypatch.delenv("LINUX_INFO_SSH_CMD", raising=False)
+    monkeypatch.delenv("LINUX_INFO_SSH_MUX", raising=False)
+    argv = ssh_mod._ssh_argv()
+    ctl = next(a for a in argv if a.startswith("ControlPath="))
+    path = ctl.split("=", 1)[1]
+    assert "lim-%C" in path
+    assert path.startswith(tempfile.gettempdir())
+
+
+def test_ssh_argv_custom_cmd_wins_no_mux(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_SSH_CMD", "ssh -F /home/me/.ssh/config")
+    argv = ssh_mod._ssh_argv()
+    assert argv == ["ssh", "-F", "/home/me/.ssh/config"]
+    assert not any("ControlMaster" in a for a in argv)
+
+
+def test_ssh_argv_mux_disabled(monkeypatch):
+    monkeypatch.delenv("LINUX_INFO_SSH_CMD", raising=False)
+    for off in ("0", "false", "no", "off", "OFF"):
+        monkeypatch.setenv("LINUX_INFO_SSH_MUX", off)
+        assert ssh_mod._ssh_argv() == ["ssh"]
+
+
 def test_run_ssh_argv_shape(monkeypatch):
     monkeypatch.setenv("LINUX_INFO_SSH_CMD", "ssh -F /tmp/cfg -o ConnectTimeout=5")
     monkeypatch.setenv("LINUX_INFO_TIMEOUT", "12")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 
@@ -12,10 +13,33 @@ from .log import get_logger
 
 _log = get_logger("ssh")
 
+_MUX_OFF = {"0", "false", "no", "off"}
+
+
+def _mux_opts() -> list[str]:
+    """Default OpenSSH connection-multiplexing options. Empty when opted out.
+
+    %C is a fixed-length connection hash, avoiding the ~104-char ControlPath
+    socket limit that %r@%h:%p can exceed. Socket lives under $TMPDIR.
+    """
+    if os.environ.get("LINUX_INFO_SSH_MUX", "").strip().lower() in _MUX_OFF:
+        return []
+    ctl = os.path.join(tempfile.gettempdir(), "lim-%C")
+    return [
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        f"ControlPath={ctl}",
+        "-o",
+        "ControlPersist=60s",
+    ]
+
 
 def _ssh_argv() -> list[str]:
-    cmd = os.environ.get("LINUX_INFO_SSH_CMD", "ssh").strip()
-    return shlex.split(cmd) if cmd else ["ssh"]
+    cmd = os.environ.get("LINUX_INFO_SSH_CMD", "").strip()
+    if cmd:
+        return shlex.split(cmd)  # caller owns full argv, including any mux config
+    return ["ssh", *_mux_opts()]
 
 
 def _timeout() -> float:

@@ -139,7 +139,8 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `LINUX_INFO_SSH_CMD` | `ssh` | Argv prefix; parsed with `shlex.split`. |
+| `LINUX_INFO_SSH_CMD` | `ssh` | Argv prefix; parsed with `shlex.split`. When set, owns full argv (no mux auto-injected). |
+| `LINUX_INFO_SSH_MUX` | on | When `LINUX_INFO_SSH_CMD` unset, default `ssh` gets ControlMaster mux (`ControlPath=$TMPDIR/lim-%C`, `ControlPersist=60s`). `0`/`false`/`no`/`off` disables. |
 | `LINUX_INFO_HOSTS` | (empty) | Comma-list host allowlist; empty = any. |
 | `LINUX_INFO_TIMEOUT` | `30` | Seconds, subprocess timeout. |
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap on stdout and stderr. |
