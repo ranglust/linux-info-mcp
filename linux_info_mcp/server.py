@@ -23,6 +23,7 @@ from .validate import (
     DEFAULT_MAX_HOSTS,
     HARD_MAX_HOSTS,
     parallelism,
+    resolve_output_mode,
     resolve_target_hosts,
 )
 
@@ -55,6 +56,38 @@ def _annotate_privilege(result: dict) -> dict:
         stderr = result.get("stderr")
         if isinstance(stderr, str) and _PRIV_ERR_RE.search(stderr):
             result["privilege_error"] = True
+    return result
+
+
+def apply_output_mode(result: dict, mode: str, parser) -> dict:
+    """Attach parsed output / parse_status per mode. Truncated or big output is not parsed."""
+    if not isinstance(result, dict):
+        return result
+    if mode == "raw":
+        result.pop("parsed", None)
+        return result
+    ec = result.get("exit_code")
+    if isinstance(ec, int) and ec != 0:
+        result["parse_status"] = "skipped_nonzero"
+        return result
+    if result.get("truncated"):
+        result["parse_status"] = "skipped_truncated"
+        return result
+    if parser is None:
+        result["parse_status"] = "unsupported"
+        return result
+    stdout = result.get("stdout")
+    if not isinstance(stdout, str):
+        result["parse_status"] = "unsupported"
+        return result
+    try:
+        result["parsed"] = parser(stdout)
+        result["parse_status"] = "ok"
+    except Exception as e:
+        result["parse_status"] = f"error: {type(e).__name__}"
+        return result
+    if mode == "parsed":
+        result.pop("stdout", None)
     return result
 
 
@@ -91,12 +124,25 @@ _HOSTS_PROP = {
 }
 
 
+_OUTPUT_MODE_PROP = {
+    "type": ["string", "null"],
+    "enum": ["raw", "parsed", "both", None],
+    "description": (
+        "Response shape: raw (stdout text, default) | parsed (structured, stdout dropped) "
+        "| both. Locked server-side by LINUX_INFO_OUTPUT_MODE. Tools without a parser fall "
+        "back to raw (parse_status=unsupported); truncated/nonzero output is not parsed."
+    ),
+}
+
+
 def _augment_schema(schema: dict) -> dict:
     """Advertise the multi-host `hosts` arg and relax single-`host` requirement."""
     s = copy.deepcopy(schema)
     props = s.setdefault("properties", {})
     if "hosts" not in props:
         props["hosts"] = copy.deepcopy(_HOSTS_PROP)
+    if "output_mode" not in props:
+        props["output_mode"] = copy.deepcopy(_OUTPUT_MODE_PROP)
     req = s.get("required")
     if isinstance(req, list) and "host" in req:
         s["required"] = [r for r in req if r != "host"]
@@ -136,7 +182,7 @@ async def _list_tools() -> list[types.Tool]:
     ]
 
 
-def _run_handler_for_host(handler, base_args: dict, host: str) -> dict:
+def _run_handler_for_host(handler, base_args: dict, host: str, mode: str, parser) -> dict:
     """Invoke a sync handler for one host; capture errors per host instead of propagating."""
     a = {k: v for k, v in base_args.items() if k != "hosts"}
     a["host"] = host
@@ -148,10 +194,10 @@ def _run_handler_for_host(handler, base_args: dict, host: str) -> dict:
         return {"host": host, "error": f"{type(e).__name__}: {e}", "outcome": "handler_error"}
     if not isinstance(r, dict):
         return {"host": host, "error": "handler returned non-dict", "outcome": "handler_error"}
-    return {"host": host, **_annotate_privilege(r)}
+    return {"host": host, **apply_output_mode(_annotate_privilege(r), mode, parser)}
 
 
-def _run_multi_host(handler, base_args: dict, hosts: list[str]) -> list[dict]:
+def _run_multi_host(handler, base_args: dict, hosts: list[str], mode: str, parser) -> list[dict]:
     """Fan a handler across hosts in a bounded thread pool. Results keep `hosts` order."""
     workers = max(1, min(parallelism(), len(hosts)))
     results: list[dict] = [{} for _ in hosts]
@@ -159,7 +205,7 @@ def _run_multi_host(handler, base_args: dict, hosts: list[str]) -> list[dict]:
         fut_to_idx = {}
         for i, h in enumerate(hosts):
             ctx = contextvars.copy_context()
-            fut = ex.submit(ctx.run, _run_handler_for_host, handler, base_args, h)
+            fut = ex.submit(ctx.run, _run_handler_for_host, handler, base_args, h, mode, parser)
             fut_to_idx[fut] = i
         for fut in as_completed(fut_to_idx):
             results[fut_to_idx[fut]] = fut.result()
@@ -195,12 +241,14 @@ async def _call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         error_msg: str | None = None
         exit_code: int | None = None
         host_count: int | None = None
+        mode = "raw"
         if spec is None:
             outcome = "unknown_tool"
             error_msg = f"unknown tool: {name}"
             result: dict = {"error": error_msg}
         else:
             try:
+                mode = resolve_output_mode(args)
                 hosts, is_multi = resolve_target_hosts(args)
             except ValueError as e:
                 outcome = "validation_error"
@@ -210,7 +258,9 @@ async def _call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 if is_multi:
                     host = None
                     host_count = len(hosts)
-                    per = await asyncio.to_thread(_run_multi_host, spec.handler, args, hosts)
+                    per = await asyncio.to_thread(
+                        _run_multi_host, spec.handler, args, hosts, mode, spec.parser
+                    )
                     result = {
                         "multi_host": True,
                         "host_count": host_count,
@@ -225,6 +275,7 @@ async def _call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                         result = await asyncio.to_thread(spec.handler, args)
                         if isinstance(result, dict):
                             _annotate_privilege(result)
+                            apply_output_mode(result, mode, spec.parser)
                             exit_code = result.get("exit_code")
                             if isinstance(exit_code, int) and exit_code != 0:
                                 outcome = "nonzero"
@@ -246,9 +297,17 @@ async def _call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             "duration_ms": round(duration_ms, 3),
             "exit_code": exit_code,
             "outcome": outcome,
+            "output_mode": mode,
         }
         if host_count is not None:
             log_extra["host_count"] = host_count
+        if (
+            host_count is None
+            and mode != "raw"
+            and isinstance(result, dict)
+            and "parse_status" in result
+        ):
+            log_extra["parse_status"] = result["parse_status"]
         if error_msg is not None:
             log_extra["error"] = error_msg
         _log.info("tool_call", extra=log_extra)

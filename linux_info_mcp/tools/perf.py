@@ -23,6 +23,7 @@ from ._common import (
     validate_pid,
     validate_user,
 )
+from ._parsers import parse_df, parse_free
 
 # ---------------------------------------------------------------------------
 # iostat
@@ -646,6 +647,7 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=FREE_SCHEMA,
         handler=handle_free,
+        parser=parse_free,
     ),
     ToolSpec(
         name="df",
@@ -654,6 +656,7 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=DF_SCHEMA,
         handler=handle_df,
+        parser=parse_df,
     ),
     ToolSpec(
         name="ps",

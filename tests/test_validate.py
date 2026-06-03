@@ -606,3 +606,108 @@ def test_resolve_rejects_neither():
 def test_resolve_single_validates_host():
     with pytest.raises(ValueError):
         resolve_target_hosts({"host": "-oProxyCommand=evil"})
+
+
+# ---------------------------------------------------------------------------
+# output_mode: validate_output_mode / resolve_output_mode
+# ---------------------------------------------------------------------------
+
+
+def test_validate_output_mode_accepts_each():
+    from linux_info_mcp.validate import validate_output_mode
+
+    assert validate_output_mode("raw") == "raw"
+    assert validate_output_mode("parsed") == "parsed"
+    assert validate_output_mode("both") == "both"
+
+
+def test_validate_output_mode_strict_case_rejected():
+    from linux_info_mcp.validate import validate_output_mode
+
+    for bad in ("Raw", "PARSED", "Both", "rAw"):
+        with pytest.raises(ValueError):
+            validate_output_mode(bad)
+
+
+def test_validate_output_mode_rejects_unknown():
+    from linux_info_mcp.validate import validate_output_mode
+
+    with pytest.raises(ValueError):
+        validate_output_mode("yourmoma")
+
+
+def test_validate_output_mode_rejects_empty():
+    from linux_info_mcp.validate import validate_output_mode
+
+    with pytest.raises(ValueError):
+        validate_output_mode("")
+
+
+def test_validate_output_mode_rejects_non_string():
+    from linux_info_mcp.validate import validate_output_mode
+
+    for bad in (123, None, ["raw"], {"mode": "raw"}, True):
+        with pytest.raises(ValueError):
+            validate_output_mode(bad)
+
+
+def test_resolve_output_mode_default_when_no_env_no_arg(monkeypatch):
+    from linux_info_mcp.validate import resolve_output_mode
+
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    assert resolve_output_mode({}) == "raw"
+
+
+def test_resolve_output_mode_arg_only(monkeypatch):
+    from linux_info_mcp.validate import resolve_output_mode
+
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    assert resolve_output_mode({"output_mode": "parsed"}) == "parsed"
+
+
+def test_resolve_output_mode_env_overrides_arg(monkeypatch):
+    from linux_info_mcp.validate import resolve_output_mode
+
+    monkeypatch.setenv("LINUX_INFO_OUTPUT_MODE", "both")
+    assert resolve_output_mode({"output_mode": "raw"}) == "both"
+
+
+def test_resolve_output_mode_env_stripped(monkeypatch):
+    from linux_info_mcp.validate import resolve_output_mode
+
+    monkeypatch.setenv("LINUX_INFO_OUTPUT_MODE", "  parsed  ")
+    assert resolve_output_mode({}) == "parsed"
+
+
+def test_resolve_output_mode_bad_arg_raises_no_env(monkeypatch):
+    from linux_info_mcp.validate import resolve_output_mode
+
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    with pytest.raises(ValueError):
+        resolve_output_mode({"output_mode": "yourmoma"})
+
+
+def test_resolve_output_mode_bad_arg_raises_even_with_env(monkeypatch):
+    from linux_info_mcp.validate import resolve_output_mode
+
+    # Arg is validated first, before env override is consulted.
+    monkeypatch.setenv("LINUX_INFO_OUTPUT_MODE", "parsed")
+    with pytest.raises(ValueError):
+        resolve_output_mode({"output_mode": "yourmoma"})
+
+
+def test_resolve_output_mode_bad_env_raises(monkeypatch):
+    from linux_info_mcp.validate import resolve_output_mode
+
+    monkeypatch.setenv("LINUX_INFO_OUTPUT_MODE", "yourmoma")
+    with pytest.raises(ValueError):
+        resolve_output_mode({})
+
+
+def test_resolve_output_mode_empty_env_ignored(monkeypatch):
+    from linux_info_mcp.validate import resolve_output_mode
+
+    # Empty/whitespace env must NOT trigger validation; falls through to arg/default.
+    monkeypatch.setenv("LINUX_INFO_OUTPUT_MODE", "   ")
+    assert resolve_output_mode({"output_mode": "both"}) == "both"
+    assert resolve_output_mode({}) == "raw"

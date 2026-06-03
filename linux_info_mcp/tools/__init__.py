@@ -14,3 +14,4 @@ class ToolSpec:
     description: str
     input_schema: dict
     handler: Callable[[dict], dict]
+    parser: Callable[[str], object] | None = None

@@ -3,6 +3,128 @@ import pytest
 from linux_info_mcp.ssh import SshResult
 from linux_info_mcp.tools import files as server_mod
 
+# ---------------------------------------------------------------------------
+# ToolSpec.parser field (output_mode)
+# ---------------------------------------------------------------------------
+
+
+def test_toolspec_parser_defaults_none():
+    from linux_info_mcp.tools import ToolSpec
+
+    spec = ToolSpec("t", "", {"type": "object"}, lambda a: {})
+    assert spec.parser is None
+
+
+def test_toolspec_parser_settable():
+    from linux_info_mcp.tools import ToolSpec
+
+    def p(s):
+        return [s]
+
+    spec = ToolSpec("t", "", {"type": "object"}, lambda a: {}, parser=p)
+    assert spec.parser is p
+
+
+def test_df_free_specs_have_reference_parsers():
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.tools._parsers import parse_df, parse_free
+
+    assert srv._TOOLS["df"].parser is parse_df
+    assert srv._TOOLS["free"].parser is parse_free
+    # A perf tool without a parser stays None.
+    assert srv._TOOLS["iostat"].parser is None
+
+
+# ---------------------------------------------------------------------------
+# apply_output_mode
+# ---------------------------------------------------------------------------
+
+
+def _res(**kw):
+    base = {
+        "stdout": "data",
+        "stderr": "",
+        "exit_code": 0,
+        "truncated": False,
+        "stderr_truncated": False,
+    }
+    base.update(kw)
+    return base
+
+
+def test_apply_raw_drops_parsed_and_sets_no_status():
+    from linux_info_mcp.server import apply_output_mode
+
+    out = apply_output_mode(_res(parsed=[1, 2]), "raw", lambda s: [1])
+    assert "parsed" not in out
+    assert "parse_status" not in out
+    assert out["stdout"] == "data"
+
+
+def test_apply_parsed_ok_drops_stdout():
+    from linux_info_mcp.server import apply_output_mode
+
+    out = apply_output_mode(_res(), "parsed", lambda s: [{"a": 1}])
+    assert out["parsed"] == [{"a": 1}]
+    assert "stdout" not in out
+    assert out["parse_status"] == "ok"
+
+
+def test_apply_both_keeps_stdout_and_parsed():
+    from linux_info_mcp.server import apply_output_mode
+
+    out = apply_output_mode(_res(), "both", lambda s: [{"a": 1}])
+    assert out["stdout"] == "data"
+    assert out["parsed"] == [{"a": 1}]
+    assert out["parse_status"] == "ok"
+
+
+def test_apply_parser_none_unsupported_keeps_stdout():
+    from linux_info_mcp.server import apply_output_mode
+
+    out = apply_output_mode(_res(), "parsed", None)
+    assert out["parse_status"] == "unsupported"
+    assert out["stdout"] == "data"
+    assert "parsed" not in out
+
+
+def test_apply_parser_raises_error_status_keeps_stdout():
+    from linux_info_mcp.server import apply_output_mode
+
+    def boom(s):
+        raise ValueError("bad")
+
+    out = apply_output_mode(_res(), "parsed", boom)
+    assert out["parse_status"].startswith("error:")
+    assert "ValueError" in out["parse_status"]
+    assert out["stdout"] == "data"
+    assert "parsed" not in out
+
+
+def test_apply_nonzero_skipped_keeps_stdout():
+    from linux_info_mcp.server import apply_output_mode
+
+    out = apply_output_mode(_res(exit_code=1), "parsed", lambda s: [1])
+    assert out["parse_status"] == "skipped_nonzero"
+    assert out["stdout"] == "data"
+    assert "parsed" not in out
+
+
+def test_apply_truncated_skipped_keeps_stdout_even_in_parsed():
+    from linux_info_mcp.server import apply_output_mode
+
+    out = apply_output_mode(_res(truncated=True), "parsed", lambda s: [1])
+    assert out["parse_status"] == "skipped_truncated"
+    assert out["stdout"] == "data"
+    assert "parsed" not in out
+
+
+def test_apply_stdout_not_str_unsupported():
+    from linux_info_mcp.server import apply_output_mode
+
+    out = apply_output_mode(_res(stdout=None), "parsed", lambda s: [1])
+    assert out["parse_status"] == "unsupported"
+
 
 def _stub(monkeypatch, result):
     captured = {}
@@ -219,6 +341,123 @@ def test_call_tool_request_id_isolated_under_concurrency(monkeypatch, tmp_path):
             assert e["request_id"] in rids
             same_rid = [x for x in entries if x.get("request_id") == e["request_id"]]
             assert all(x.get("tool") == expected_tool for x in same_rid)
+    finally:
+        reset_for_tests()
+
+
+# ---------------------------------------------------------------------------
+# output_mode: _call_tool integration
+# ---------------------------------------------------------------------------
+
+_OM_SCHEMA = {
+    "type": "object",
+    "properties": {"host": {"type": "string"}},
+    "required": ["host"],
+}
+
+
+def _om_tool():
+    from linux_info_mcp.tools import ToolSpec
+
+    def handler(args):
+        return {
+            "stdout": "X",
+            "stderr": "",
+            "exit_code": 0,
+            "truncated": False,
+            "stderr_truncated": False,
+        }
+
+    return ToolSpec("pt", "", _OM_SCHEMA, handler, parser=lambda s: [{"v": s}])
+
+
+def _call(name, args, monkeypatch):
+    import asyncio
+    import json
+
+    from linux_info_mcp import server as srv
+
+    monkeypatch.setattr(srv, "_TOOLS", {"pt": _om_tool()})
+    return json.loads(asyncio.run(srv._call_tool(name, args))[0].text)
+
+
+def test_call_tool_single_host_parsed(monkeypatch):
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    body = _call("pt", {"host": "h1", "output_mode": "parsed"}, monkeypatch)
+    assert body["parsed"] == [{"v": "X"}]
+    assert "stdout" not in body
+    assert body["parse_status"] == "ok"
+
+
+def test_call_tool_single_host_raw_default(monkeypatch):
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    body = _call("pt", {"host": "h1"}, monkeypatch)
+    assert body["stdout"] == "X"
+    assert "parsed" not in body
+    assert "parse_status" not in body
+
+
+def test_call_tool_single_host_both(monkeypatch):
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    body = _call("pt", {"host": "h1", "output_mode": "both"}, monkeypatch)
+    assert body["stdout"] == "X"
+    assert body["parsed"] == [{"v": "X"}]
+    assert body["parse_status"] == "ok"
+
+
+def test_call_tool_multi_host_parsed_per_host(monkeypatch):
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    body = _call("pt", {"hosts": ["h1", "h2"], "output_mode": "parsed"}, monkeypatch)
+    assert body["multi_host"] is True
+    for r in body["results"]:
+        assert r["parse_status"] == "ok"
+        assert r["parsed"] == [{"v": "X"}]
+        assert "stdout" not in r
+
+
+def test_call_tool_env_overrides_arg(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_OUTPUT_MODE", "parsed")
+    body = _call("pt", {"host": "h1", "output_mode": "raw"}, monkeypatch)
+    assert body["parsed"] == [{"v": "X"}]
+    assert "stdout" not in body
+
+
+def test_call_tool_invalid_output_mode_arg_is_validation_error(monkeypatch):
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    body = _call("pt", {"host": "h1", "output_mode": "yourmoma"}, monkeypatch)
+    assert "error" in body
+    assert "parsed" not in body
+
+
+def test_call_tool_invalid_output_mode_env_is_validation_error(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_OUTPUT_MODE", "yourmoma")
+    body = _call("pt", {"host": "h1"}, monkeypatch)
+    assert "error" in body
+
+
+def test_call_tool_logs_output_mode_and_parse_status(monkeypatch, tmp_path):
+    import asyncio
+    import json
+    import logging
+
+    from linux_info_mcp import server as srv
+    from linux_info_mcp.log import reset_for_tests, setup_logging
+
+    reset_for_tests()
+    p = tmp_path / "srv.jsonl"
+    monkeypatch.setenv("LINUX_INFO_LOG_FILE", str(p))
+    monkeypatch.setenv("LINUX_INFO_LOG_LEVEL", "INFO")
+    monkeypatch.delenv("LINUX_INFO_OUTPUT_MODE", raising=False)
+    setup_logging()
+    try:
+        monkeypatch.setattr(srv, "_TOOLS", {"pt": _om_tool()})
+        asyncio.run(srv._call_tool("pt", {"host": "h1", "output_mode": "parsed"}))
+        for h in logging.getLogger("linux_info_mcp").handlers:
+            h.flush()
+        entries = [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+        tc = next(e for e in entries if e["msg"] == "tool_call")
+        assert tc["output_mode"] == "parsed"
+        assert tc["parse_status"] == "ok"
     finally:
         reset_for_tests()
 
@@ -504,6 +743,19 @@ def test_list_tools_advertises_hosts_and_relaxes_host(monkeypatch):
     assert "host" not in rf.inputSchema.get("required", [])
     # original ToolSpec schema untouched
     assert "host" in srv._TOOLS["read_file"].input_schema["required"]
+
+
+def test_list_tools_advertises_output_mode(monkeypatch):
+    import asyncio
+
+    from linux_info_mcp import server as srv
+
+    tools = asyncio.run(srv._list_tools())
+    rf = {t.name: t for t in tools}["read_file"]
+    om = rf.inputSchema["properties"]["output_mode"]
+    assert set(om["enum"]) == {"raw", "parsed", "both", None}
+    # original ToolSpec schema untouched
+    assert "output_mode" not in srv._TOOLS["read_file"].input_schema["properties"]
 
 
 def test_list_tools_description_mentions_multi_host():

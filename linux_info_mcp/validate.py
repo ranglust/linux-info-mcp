@@ -9,6 +9,8 @@ HARD_MAX_HOSTS = 25
 DEFAULT_MAX_HOSTS = 10
 DEFAULT_PARALLELISM = 4
 
+OUTPUT_MODES: frozenset[str] = frozenset({"raw", "parsed", "both"})
+
 GREP_FLAG_WHITELIST = {"-i", "-E", "-v", "-n", "-w", "-F"}
 _GREP_CONTEXT_RE = re.compile(r"^-C[1-9]$")
 FIND_TYPE_WHITELIST = {"f", "d", "l", "b", "c", "p", "s"}
@@ -215,6 +217,28 @@ def validate_offset_length(offset: int, length: int, max_bytes: int):
             f"(derived from LINUX_INFO_MAX_BYTES={max_bytes})"
         )
     return offset, length
+
+
+def validate_output_mode(value: object) -> str:
+    """Strict response-shape mode. Exactly raw/parsed/both; no case-folding."""
+    if not isinstance(value, str):
+        raise ValueError("output_mode must be a string")
+    if value not in OUTPUT_MODES:
+        raise ValueError(f"output_mode {value!r} invalid; must be one of {sorted(OUTPUT_MODES)}")
+    return value
+
+
+def resolve_output_mode(args) -> str:
+    """Effective output mode. Env overrides arg; both validated. Default 'raw'."""
+    arg = args.get("output_mode") if isinstance(args, dict) else None
+    if arg is not None:
+        validate_output_mode(arg)  # always validate — reject junk even if env wins
+    env = os.environ.get("LINUX_INFO_OUTPUT_MODE", "").strip()
+    if env:
+        return validate_output_mode(env)
+    if arg is not None:
+        return arg
+    return "raw"
 
 
 def validate_cgroup_path(path: str, label: str = "cgroup_path") -> str:
