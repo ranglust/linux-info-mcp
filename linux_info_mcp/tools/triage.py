@@ -25,7 +25,7 @@ _SCRIPT = (
     "echo '===nproc==='; nproc 2>/dev/null || true; "
     "echo '===meminfo==='; "
     "grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo 2>/dev/null || true; "
-    "echo '===df==='; df -P -l -x tmpfs -x devtmpfs 2>/dev/null || true; "
+    "echo '===df==='; df -P -l -x tmpfs -x devtmpfs -x overlay 2>/dev/null || true; "
     "echo '===failed_units==='; "
     "systemctl --failed --no-legend --plain 2>/dev/null || true; "
     "echo '===psi_cpu==='; cat /proc/pressure/cpu 2>/dev/null || true; "

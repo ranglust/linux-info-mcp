@@ -1028,7 +1028,7 @@ One SSH round-trip health summary. Runs a fixed bundled probe script (no user in
 - `host: str` — required. (No other args in v1; thresholds are fixed.)
 
 **Behavior**
-- Remote command: `LC_ALL=C sh -c '<script>'` bundling: `/proc/loadavg`, `nproc`, filtered `/proc/meminfo` (`MemTotal`/`MemAvailable`/`SwapTotal`/`SwapFree`), `df -P -l -x tmpfs -x devtmpfs`, `systemctl --failed --no-legend --plain`, `/proc/pressure/{cpu,memory,io}`, and recent `dmesg` OOM/kill lines.
+- Remote command: `LC_ALL=C sh -c '<script>'` bundling: `/proc/loadavg`, `nproc`, filtered `/proc/meminfo` (`MemTotal`/`MemAvailable`/`SwapTotal`/`SwapFree`), `df -P -l -x tmpfs -x devtmpfs -x overlay` (overlay excluded so docker layer mounts don't duplicate their backing fs), `systemctl --failed --no-legend --plain`, `/proc/pressure/{cpu,memory,io}`, and recent `dmesg` OOM/kill lines.
 - Parsing is pure and never raises; missing sections yield `null`/empty fields, not errors.
 
 **Thresholds** (warning kinds): `high_load` (load1/nproc ≥ 1.5, `crit` ≥ 4.0), `low_memory` (MemAvailable < 10% of total, `crit` < 5%), `swap_pressure` (swap > 50% used), `disk_full` (mount ≥ 90%, `crit` ≥ 95%; one per mount), `failed_units` (any failed unit), `pressure` (PSI some avg10 > 20 per resource), `oom_recent` (recent OOM/kill lines).

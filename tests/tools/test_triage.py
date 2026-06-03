@@ -11,6 +11,12 @@ from linux_info_mcp.tools.triage import (
 # ---------------------------------------------------------------------------
 
 
+def test_triage_df_excludes_overlay():
+    # docker overlay mounts duplicate the backing fs; exclude them from the disk probe.
+    cmd = build_remote_cmd_triage()
+    assert "-x overlay" in cmd
+
+
 def test_build_cmd_is_single_fixed_sh_c():
     cmd = build_remote_cmd_triage()
     assert cmd.startswith("LC_ALL=C sh -c ")
