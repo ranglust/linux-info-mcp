@@ -372,6 +372,7 @@ def test_tools_registry_names():
         "net_protocol_stats",
         "nft_list",
         "iptables_list",
+        "dig",
     ]
     for spec in mod.TOOLS:
         assert "host" in spec.input_schema["required"]
@@ -748,4 +749,124 @@ def test_iptables_list_rejects_table_injection(monkeypatch):
 def test_iptables_list_truncated_propagates(monkeypatch):
     _stub(monkeypatch, SshResult(b"x", b"", 0, True))
     out = mod.handle_iptables_list({"host": "h1"})
+    assert out["truncated"] is True
+
+
+# ---------------------------------------------------------------------------
+# dig
+# ---------------------------------------------------------------------------
+
+
+def test_dig_default_builder():
+    assert mod.build_remote_cmd_dig(name="example.com") == "LC_ALL=C dig example.com"
+
+
+def test_dig_type_and_server_builder():
+    cmd = mod.build_remote_cmd_dig(name="example.com", record_type="MX", server="1.1.1.1")
+    assert cmd == "LC_ALL=C dig @1.1.1.1 example.com MX"
+
+
+def test_dig_all_plus_opts_builder():
+    cmd = mod.build_remote_cmd_dig(
+        name="example.com", short=True, tcp=True, trace=True, dnssec=True
+    )
+    assert cmd == "LC_ALL=C dig example.com +short +tcp +trace +dnssec"
+
+
+def test_dig_reverse_builder():
+    cmd = mod.build_remote_cmd_dig(name="8.8.8.8", reverse=True)
+    assert cmd == "LC_ALL=C dig -x 8.8.8.8"
+
+
+def test_dig_handler_default(monkeypatch):
+    captured = _stub(
+        monkeypatch,
+        SshResult(stdout=b"out\n", stderr=b"", exit_code=0, truncated=False),
+    )
+    out = mod.handle_dig({"host": "h1", "name": "example.com"})
+    assert out == {
+        "stdout": "out\n",
+        "stderr": "",
+        "exit_code": 0,
+        "truncated": False,
+        "stderr_truncated": False,
+    }
+    assert captured["cmd"] == "LC_ALL=C dig example.com"
+
+
+def test_dig_handler_type_lowercased(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_dig({"host": "h1", "name": "example.com", "record_type": "aaaa"})
+    assert captured["cmd"] == "LC_ALL=C dig example.com AAAA"
+
+
+def test_dig_handler_reverse(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_dig({"host": "h1", "name": "2001:db8::1", "reverse": True})
+    assert captured["cmd"] == "LC_ALL=C dig -x 2001:db8::1"
+
+
+def test_dig_handler_underscore_name(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_dig({"host": "h1", "name": "_dmarc.example.com", "record_type": "TXT"})
+    assert captured["cmd"] == "LC_ALL=C dig _dmarc.example.com TXT"
+
+
+def test_dig_rejects_missing_name(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1"})
+
+
+def test_dig_rejects_bad_type(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1", "name": "example.com", "record_type": "AXFR"})
+
+
+def test_dig_rejects_reverse_with_type(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1", "name": "8.8.8.8", "reverse": True, "record_type": "PTR"})
+
+
+def test_dig_rejects_name_injection(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1", "name": "example.com; rm -rf /"})
+
+
+def test_dig_rejects_name_flag_injection(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1", "name": "-oProxyCommand=evil"})
+
+
+def test_dig_rejects_server_injection(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1", "name": "example.com", "server": "1.1.1.1; evil"})
+
+
+def test_dig_rejects_newline_in_name(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1", "name": "example.com\nfoo"})
+
+
+def test_dig_rejects_nul_in_name(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1", "name": "example.com\x00"})
+
+
+def test_dig_rejects_non_bool(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dig({"host": "h1", "name": "example.com", "short": "yes"})
+
+
+def test_dig_truncated_propagates(monkeypatch):
+    _stub(monkeypatch, SshResult(b"x", b"", 0, True))
+    out = mod.handle_dig({"host": "h1", "name": "example.com"})
     assert out["truncated"] is True

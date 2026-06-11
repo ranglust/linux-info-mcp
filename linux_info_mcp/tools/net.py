@@ -734,6 +734,159 @@ IPTABLES_LIST_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
+# dig
+# ---------------------------------------------------------------------------
+
+_DIG_TYPE_WHITELIST = {
+    "A",
+    "AAAA",
+    "MX",
+    "NS",
+    "TXT",
+    "CNAME",
+    "SOA",
+    "PTR",
+    "SRV",
+    "CAA",
+    "DS",
+    "DNSKEY",
+    "NAPTR",
+    "ANY",
+}
+_DIG_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,253}$")
+_DIG_SERVER_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,253}$")
+
+
+def _validate_dig_name(name) -> str:
+    if not isinstance(name, str) or not name:
+        raise ValueError("name must be a non-empty string")
+    reject_unsafe_chars(name, "name")
+    if name.startswith("-"):
+        raise ValueError("name must not start with '-'")
+    if not _DIG_NAME_RE.fullmatch(name):
+        raise ValueError("name must match ^[A-Za-z0-9_.:-]{1,253}$")
+    return name
+
+
+def _validate_dig_server(server) -> str:
+    if not isinstance(server, str) or not server:
+        raise ValueError("server must be a non-empty string")
+    reject_unsafe_chars(server, "server")
+    if server.startswith("-"):
+        raise ValueError("server must not start with '-'")
+    if not _DIG_SERVER_RE.fullmatch(server):
+        raise ValueError("server must match ^[A-Za-z0-9_.:-]{1,253}$")
+    return server
+
+
+def _validate_dig_type(rtype) -> str:
+    if not isinstance(rtype, str) or rtype.upper() not in _DIG_TYPE_WHITELIST:
+        raise ValueError(f"record_type must be one of {sorted(_DIG_TYPE_WHITELIST)}")
+    return rtype.upper()
+
+
+def build_remote_cmd_dig(
+    *,
+    name: str,
+    record_type: str | None = None,
+    server: str | None = None,
+    reverse: bool = False,
+    short: bool = False,
+    tcp: bool = False,
+    trace: bool = False,
+    dnssec: bool = False,
+) -> str:
+    """Build LC_ALL=C dig command string."""
+    parts = ["LC_ALL=C", "dig"]
+    if server is not None:
+        parts.append(shlex.quote(f"@{server}"))
+    if reverse:
+        parts += ["-x", shlex.quote(name)]
+    else:
+        parts.append(shlex.quote(name))
+        if record_type is not None:
+            parts.append(shlex.quote(record_type))
+    if short:
+        parts.append("+short")
+    if tcp:
+        parts.append("+tcp")
+    if trace:
+        parts.append("+trace")
+    if dnssec:
+        parts.append("+dnssec")
+    return " ".join(parts)
+
+
+def handle_dig(args: dict) -> dict:
+    host = validate_host(args["host"])
+    name = _validate_dig_name(args.get("name"))
+    reverse = _bool(args.get("reverse"), "reverse")
+    record_type = args.get("record_type")
+    if record_type is not None:
+        if reverse:
+            raise ValueError("record_type is not valid with reverse (implies PTR)")
+        record_type = _validate_dig_type(record_type)
+    server = args.get("server")
+    if server is not None:
+        server = _validate_dig_server(server)
+    cmd = build_remote_cmd_dig(
+        name=name,
+        record_type=record_type,
+        server=server,
+        reverse=reverse,
+        short=_bool(args.get("short"), "short"),
+        tcp=_bool(args.get("tcp"), "tcp"),
+        trace=_bool(args.get("trace"), "trace"),
+        dnssec=_bool(args.get("dnssec"), "dnssec"),
+    )
+    res = run_ssh(host, cmd)
+    return {
+        "stdout": _decode_text(res.stdout),
+        "stderr": _decode_text(res.stderr),
+        "exit_code": res.exit_code,
+        "truncated": res.truncated,
+        "stderr_truncated": res.stderr_truncated,
+    }
+
+
+DIG_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "host": {"type": "string"},
+        "name": {"type": "string"},
+        "record_type": {
+            "type": ["string", "null"],
+            "enum": [
+                "A",
+                "AAAA",
+                "MX",
+                "NS",
+                "TXT",
+                "CNAME",
+                "SOA",
+                "PTR",
+                "SRV",
+                "CAA",
+                "DS",
+                "DNSKEY",
+                "NAPTR",
+                "ANY",
+                None,
+            ],
+        },
+        "server": {"type": ["string", "null"]},
+        "reverse": {"type": ["boolean", "null"]},
+        "short": {"type": ["boolean", "null"]},
+        "tcp": {"type": ["boolean", "null"]},
+        "trace": {"type": ["boolean", "null"]},
+        "dnssec": {"type": ["boolean", "null"]},
+    },
+    "required": ["host", "name"],
+    "additionalProperties": False,
+}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -840,5 +993,16 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=IPTABLES_LIST_SCHEMA,
         handler=handle_iptables_list,
+    ),
+    ToolSpec(
+        name="dig",
+        description=(
+            "Run dig (DNS lookup) on a remote host via SSH. Query <name> with optional "
+            "record_type (A|AAAA|MX|NS|TXT|CNAME|SOA|PTR|SRV|CAA|DS|DNSKEY|NAPTR|ANY), "
+            "optional @server, and +short/+tcp/+trace/+dnssec. reverse=true does -x (PTR). "
+            "Read-only. Returns stdout, stderr, exit_code, truncated."
+        ),
+        input_schema=DIG_SCHEMA,
+        handler=handle_dig,
     ),
 ]

@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 67 tools across 16 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 68 tools across 16 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -1054,6 +1054,29 @@ Empty `warnings` = healthy.
 
 ---
 
+### 68. `dig`
+
+Run `dig` (DNS lookup) on a remote host. Read-only.
+
+**Args**
+- `host: str` — required.
+- `name: str` — required. Query name (domain) or, with `reverse`, an IP address. Regex `^[A-Za-z0-9_.:-]{1,253}$`, no leading `-`.
+- `record_type: str | None` — whitelist `A`, `AAAA`, `MX`, `NS`, `TXT`, `CNAME`, `SOA`, `PTR`, `SRV`, `CAA`, `DS`, `DNSKEY`, `NAPTR`, `ANY` (case-insensitive, upcased). Rejected when `reverse` is set. Omitted ⇒ dig default (`A`).
+- `server: str | None` — DNS server to query (`@server`). Same regex as `name`.
+- `reverse: bool | None` — `dig -x <name>` reverse (PTR) lookup.
+- `short: bool | None` — `+short`.
+- `tcp: bool | None` — `+tcp`.
+- `trace: bool | None` — `+trace`.
+- `dnssec: bool | None` — `+dnssec`.
+
+**Behavior**
+- Remote command: `LC_ALL=C dig [@server] [-x name | name [type]] [+short] [+tcp] [+trace] [+dnssec]`. Every interpolated value (`name`, `server`, `record_type`) is `shlex.quote`-escaped; `record_type` also comes from the whitelist. `+`-options are fixed literals.
+- No root required.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+---
+
 ## Configuration (environment variables)
 
 | Var | Default | Meaning |
@@ -1129,7 +1152,7 @@ linux-info-mcp/
       systemctl.py           # systemctl_status, systemctl_list, systemctl_list_timers, systemctl_list_sockets
       journalctl.py          # journalctl
       perf.py                # iostat, vmstat, free, df, ps, psi_stats, meminfo
-      net.py                 # ss, ip_addr, ip_route, lsof_net, arp_table, tc_qdisc, ethtool, conntrack, net_protocol_stats, nft_list, iptables_list
+      net.py                 # ss, ip_addr, ip_route, lsof_net, arp_table, tc_qdisc, ethtool, conntrack, net_protocol_stats, nft_list, iptables_list, dig
       lldp.py                # lldp_neighbors, lldp_interfaces, lldp_statistics, lldp_chassis
       proc.py                # lsof, pgrep, pidof, top, proc_limits
       disk.py                # du, lsblk, blkid, smartctl, blockdev
@@ -1172,7 +1195,7 @@ linux-info-mcp/
   SECURITY.md                # threat model + reporting
 ```
 
-67 tools across 16 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
+68 tools across 16 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 

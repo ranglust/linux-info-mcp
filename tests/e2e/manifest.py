@@ -27,6 +27,7 @@ TOOL_ARGS: dict[str, list[dict]] = {
     # triage meta-tool (host-only, safe on stock Linux)
     "triage": [{}],
     # net
+    "dig": [{"name": "localhost", "short": True}],
     # proc
     "pgrep": [{"pattern": "systemd"}],
     "pidof": [{"program": "systemd"}],
