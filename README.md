@@ -3,7 +3,7 @@
 ![tests](https://github.com/ranglust/linux-info-mcp/actions/workflows/tests.yml/badge.svg)
 [![codecov](https://codecov.io/gh/ranglust/linux-info-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/ranglust/linux-info-mcp)
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. 68 tools across 16 modules:
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. 70 tools across 16 modules:
 
 - files: `read_file`, `find_files`, `read_binary`
 - systemctl: `systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`
@@ -15,7 +15,7 @@ MCP server that runs read-only diagnostic commands on remote hosts via SSH. 68 t
 - disk: `du`, `lsblk`, `blkid`, `smartctl`, `blockdev`
 - kernel: `dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`
 - pkg: `dpkg_list`, `rpm_list`, `apt_list_installed`
-- sys: `uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`
+- sys: `uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`, `lspci`, `lsusb`
 - time: `chronyc`, `timedatectl`
 - fs: `mount`, `findmnt`, `stat_fs`
 - docker: `docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`

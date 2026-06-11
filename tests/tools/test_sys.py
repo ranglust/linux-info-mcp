@@ -392,13 +392,142 @@ def test_dmidecode_truncated_propagates(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# lspci
+# ---------------------------------------------------------------------------
+
+
+def test_lspci_default_builder():
+    assert mod.build_remote_cmd_lspci() == "LC_ALL=C lspci"
+
+
+def test_lspci_all_flags_builder():
+    assert (
+        mod.build_remote_cmd_lspci(numeric=True, verbose=True, kernel=True)
+        == "LC_ALL=C lspci -nn -vv -k"
+    )
+
+
+def test_lspci_tree_builder():
+    assert mod.build_remote_cmd_lspci(tree=True) == "LC_ALL=C lspci -t"
+
+
+def test_lspci_rejects_tree_with_verbose():
+    with pytest.raises(ValueError):
+        mod.build_remote_cmd_lspci(tree=True, verbose=True)
+
+
+def test_lspci_rejects_tree_with_kernel():
+    with pytest.raises(ValueError):
+        mod.build_remote_cmd_lspci(tree=True, kernel=True)
+
+
+def test_lspci_handler_rejects_tree_with_verbose(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_lspci({"host": "h1", "tree": True, "verbose": True})
+
+
+def test_lspci_handler_rejects_non_bool(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_lspci({"host": "h1", "numeric": "yes"})
+
+
+def test_lspci_handler_rejects_bad_host(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_lspci({"host": "-oProxyCommand=evil"})
+
+
+def test_lspci_handler_happy(monkeypatch):
+    captured = _stub(
+        monkeypatch,
+        SshResult(stdout=b"00:00.0 Host bridge\n", stderr=b"", exit_code=0, truncated=False),
+    )
+    out = mod.handle_lspci({"host": "h1", "numeric": True})
+    assert out["stdout"] == "00:00.0 Host bridge\n"
+    assert captured["cmd"] == "LC_ALL=C lspci -nn"
+
+
+def test_lspci_truncated_propagates(monkeypatch):
+    _stub(monkeypatch, SshResult(b"x", b"", 0, True))
+    out = mod.handle_lspci({"host": "h1"})
+    assert out["truncated"] is True
+
+
+# ---------------------------------------------------------------------------
+# lsusb
+# ---------------------------------------------------------------------------
+
+
+def test_lsusb_default_builder():
+    assert mod.build_remote_cmd_lsusb() == "LC_ALL=C lsusb"
+
+
+def test_lsusb_verbose_builder():
+    assert mod.build_remote_cmd_lsusb(verbose=True) == "LC_ALL=C lsusb -v"
+
+
+def test_lsusb_tree_builder():
+    assert mod.build_remote_cmd_lsusb(tree=True) == "LC_ALL=C lsusb -t"
+
+
+def test_lsusb_rejects_verbose_and_tree():
+    with pytest.raises(ValueError):
+        mod.build_remote_cmd_lsusb(verbose=True, tree=True)
+
+
+def test_lsusb_handler_rejects_verbose_and_tree(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_lsusb({"host": "h1", "verbose": True, "tree": True})
+
+
+def test_lsusb_handler_rejects_non_bool(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_lsusb({"host": "h1", "tree": "yes"})
+
+
+def test_lsusb_handler_rejects_bad_host(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_lsusb({"host": "-oProxyCommand=evil"})
+
+
+def test_lsusb_handler_happy(monkeypatch):
+    captured = _stub(
+        monkeypatch,
+        SshResult(stdout=b"Bus 001 Device 001\n", stderr=b"", exit_code=0, truncated=False),
+    )
+    out = mod.handle_lsusb({"host": "h1", "tree": True})
+    assert out["stdout"] == "Bus 001 Device 001\n"
+    assert captured["cmd"] == "LC_ALL=C lsusb -t"
+
+
+def test_lsusb_truncated_propagates(monkeypatch):
+    _stub(monkeypatch, SshResult(b"x", b"", 0, True))
+    out = mod.handle_lsusb({"host": "h1"})
+    assert out["truncated"] is True
+
+
+# ---------------------------------------------------------------------------
 # TOOLS registration
 # ---------------------------------------------------------------------------
 
 
 def test_tools_registry_names():
     names = [t.name for t in mod.TOOLS]
-    assert names == ["uptime", "who", "last", "lscpu", "lsmem", "dmidecode"]
+    assert names == [
+        "uptime",
+        "who",
+        "last",
+        "lscpu",
+        "lsmem",
+        "dmidecode",
+        "lspci",
+        "lsusb",
+    ]
     for spec in mod.TOOLS:
         assert "host" in spec.input_schema["required"]
         assert callable(spec.handler)

@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 68 tools across 16 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 70 tools across 16 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -1075,6 +1075,38 @@ Run `dig` (DNS lookup) on a remote host. Read-only.
 
 **Returns** `{stdout, stderr, exit_code, truncated}`.
 
+### 69. `lspci`
+
+Run `lspci` (PCI device enumeration) on a remote host. Read-only.
+
+**Args**
+- `host: str` — required.
+- `numeric: bool | None` — `-nn` (show vendor/device names *and* numeric IDs).
+- `verbose: bool | None` — `-vv` (very verbose per-device detail).
+- `kernel: bool | None` — `-k` (show kernel drivers/modules handling each device).
+- `tree: bool | None` — `-t` (tree view). Mutually exclusive with `verbose` and `kernel`.
+
+**Behavior**
+- Remote command: `LC_ALL=C lspci [-nn] [-vv] [-k] [-t]`. No interpolated values; all options are fixed literals.
+- No root required for basic enumeration; some detail fields are only populated when run as root.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+### 70. `lsusb`
+
+Run `lsusb` (USB device enumeration) on a remote host. Read-only.
+
+**Args**
+- `host: str` — required.
+- `verbose: bool | None` — `-v` (verbose per-device detail). Mutually exclusive with `tree`.
+- `tree: bool | None` — `-t` (tree view). Mutually exclusive with `verbose`.
+
+**Behavior**
+- Remote command: `LC_ALL=C lsusb [-v] [-t]`. No interpolated values; all options are fixed literals.
+- No root required for basic enumeration; full `-v` descriptors may need root.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
 ---
 
 ## Configuration (environment variables)
@@ -1158,7 +1190,7 @@ linux-info-mcp/
       disk.py                # du, lsblk, blkid, smartctl, blockdev
       kernel.py              # dmesg, uname, sysctl, slabtop, numastat, cgroup_stats, systemd_analyze
       pkg.py                 # dpkg_list, rpm_list, apt_list_installed
-      sys.py                 # uptime, who, last, lscpu, lsmem, dmidecode
+      sys.py                 # uptime, who, last, lscpu, lsmem, dmidecode, lspci, lsusb
       time.py                # chronyc, timedatectl
       fs.py                  # mount, findmnt, stat_fs
       docker.py              # docker_ps, docker_inspect, docker_images, docker_logs
@@ -1195,7 +1227,7 @@ linux-info-mcp/
   SECURITY.md                # threat model + reporting
 ```
 
-68 tools across 16 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
+70 tools across 16 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 

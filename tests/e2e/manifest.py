@@ -41,6 +41,8 @@ TOOL_ARGS: dict[str, list[dict]] = {
     # sys
     "last": [{"lines": 20}],
     "dmidecode": [{"type": "system"}],
+    "lspci": [{"numeric": True}],
+    "lsusb": [{}],
     # time
     "chronyc": [{"subcommand": "tracking"}],
     "timedatectl": [{"mode": "status"}],

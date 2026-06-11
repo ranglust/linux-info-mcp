@@ -1,4 +1,4 @@
-"""System info tools: uptime, who, last, lscpu, lsmem, dmidecode."""
+"""System info tools: uptime, who, last, lscpu, lsmem, dmidecode, lspci, lsusb."""
 
 from __future__ import annotations
 
@@ -374,6 +374,110 @@ DMIDECODE_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
+# lspci
+# ---------------------------------------------------------------------------
+
+
+def build_remote_cmd_lspci(
+    *,
+    numeric: bool = False,
+    verbose: bool = False,
+    kernel: bool = False,
+    tree: bool = False,
+) -> str:
+    """Build LC_ALL=C lspci command string."""
+    if tree and (verbose or kernel):
+        raise ValueError("tree is mutually exclusive with verbose and kernel")
+    parts = ["LC_ALL=C", "lspci"]
+    if numeric:
+        parts.append("-nn")
+    if verbose:
+        parts.append("-vv")
+    if kernel:
+        parts.append("-k")
+    if tree:
+        parts.append("-t")
+    return " ".join(parts)
+
+
+def handle_lspci(args: dict) -> dict:
+    host = validate_host(args["host"])
+    cmd = build_remote_cmd_lspci(
+        numeric=_bool(args.get("numeric"), "numeric"),
+        verbose=_bool(args.get("verbose"), "verbose"),
+        kernel=_bool(args.get("kernel"), "kernel"),
+        tree=_bool(args.get("tree"), "tree"),
+    )
+    res = run_ssh(host, cmd)
+    return {
+        "stdout": _decode_text(res.stdout),
+        "stderr": _decode_text(res.stderr),
+        "exit_code": res.exit_code,
+        "truncated": res.truncated,
+        "stderr_truncated": res.stderr_truncated,
+    }
+
+
+LSPCI_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "host": {"type": "string"},
+        "numeric": {"type": ["boolean", "null"]},
+        "verbose": {"type": ["boolean", "null"]},
+        "kernel": {"type": ["boolean", "null"]},
+        "tree": {"type": ["boolean", "null"]},
+    },
+    "required": ["host"],
+    "additionalProperties": False,
+}
+
+
+# ---------------------------------------------------------------------------
+# lsusb
+# ---------------------------------------------------------------------------
+
+
+def build_remote_cmd_lsusb(*, verbose: bool = False, tree: bool = False) -> str:
+    """Build LC_ALL=C lsusb command string."""
+    if verbose and tree:
+        raise ValueError("verbose and tree are mutually exclusive")
+    parts = ["LC_ALL=C", "lsusb"]
+    if verbose:
+        parts.append("-v")
+    if tree:
+        parts.append("-t")
+    return " ".join(parts)
+
+
+def handle_lsusb(args: dict) -> dict:
+    host = validate_host(args["host"])
+    cmd = build_remote_cmd_lsusb(
+        verbose=_bool(args.get("verbose"), "verbose"),
+        tree=_bool(args.get("tree"), "tree"),
+    )
+    res = run_ssh(host, cmd)
+    return {
+        "stdout": _decode_text(res.stdout),
+        "stderr": _decode_text(res.stderr),
+        "exit_code": res.exit_code,
+        "truncated": res.truncated,
+        "stderr_truncated": res.stderr_truncated,
+    }
+
+
+LSUSB_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "host": {"type": "string"},
+        "verbose": {"type": ["boolean", "null"]},
+        "tree": {"type": ["boolean", "null"]},
+    },
+    "required": ["host"],
+    "additionalProperties": False,
+}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -428,5 +532,23 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=DMIDECODE_SCHEMA,
         handler=handle_dmidecode,
+    ),
+    ToolSpec(
+        name="lspci",
+        description=(
+            "Run lspci on a remote host via SSH to enumerate PCI devices. "
+            "Returns stdout, stderr, exit_code, truncated."
+        ),
+        input_schema=LSPCI_SCHEMA,
+        handler=handle_lspci,
+    ),
+    ToolSpec(
+        name="lsusb",
+        description=(
+            "Run lsusb on a remote host via SSH to enumerate USB devices. "
+            "Returns stdout, stderr, exit_code, truncated."
+        ),
+        input_schema=LSUSB_SCHEMA,
+        handler=handle_lsusb,
     ),
 ]
