@@ -272,9 +272,49 @@ def test_apt_list_installed_truncated_propagates(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# reboot_required
+# ---------------------------------------------------------------------------
+
+
+def test_reboot_required_builder_is_fixed_sh_c():
+    cmd = mod.build_remote_cmd_reboot_required()
+    assert cmd.startswith("LC_ALL=C sh -c ")
+    assert "/var/run/reboot-required" in cmd
+    assert "/var/run/reboot-required.pkgs" in cmd
+
+
+def test_reboot_required_handler_happy(monkeypatch):
+    captured = _stub(
+        monkeypatch,
+        SshResult(stdout=b"reboot-required: yes\n", stderr=b"", exit_code=0, truncated=False),
+    )
+    out = mod.handle_reboot_required({"host": "h1"})
+    assert out == {
+        "stdout": "reboot-required: yes\n",
+        "stderr": "",
+        "exit_code": 0,
+        "truncated": False,
+        "stderr_truncated": False,
+    }
+    assert captured["cmd"].startswith("LC_ALL=C sh -c ")
+
+
+def test_reboot_required_rejects_bad_host(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_reboot_required({"host": "-oProxyCommand=evil"})
+
+
+def test_reboot_required_truncation_propagates(monkeypatch):
+    _stub(monkeypatch, SshResult(stdout=b"x", stderr=b"", exit_code=0, truncated=True))
+    out = mod.handle_reboot_required({"host": "h1"})
+    assert out["truncated"] is True
+
+
 def test_tools_registry_names():
     names = [t.name for t in mod.TOOLS]
-    assert names == ["dpkg_list", "rpm_list", "apt_list_installed"]
+    assert names == ["dpkg_list", "rpm_list", "apt_list_installed", "reboot_required"]
     for spec in mod.TOOLS:
         assert spec.input_schema["required"] == ["host"]
         assert callable(spec.handler)

@@ -48,13 +48,13 @@ def test_dmidecode_sudo(monkeypatch):
 
 def test_dmesg_sudo(monkeypatch):
     monkeypatch.setenv("LINUX_INFO_SUDO", "1")
-    assert kernel.build_remote_cmd_dmesg() == "LC_ALL=C sudo -n dmesg --no-pager"
+    assert kernel.build_remote_cmd_dmesg() == "LC_ALL=C sudo -n dmesg"
 
 
 def test_dmesg_sudo_keeps_tail_outside(monkeypatch):
     monkeypatch.setenv("LINUX_INFO_SUDO", "1")
     cmd = kernel.build_remote_cmd_dmesg(tail_lines=50)
-    assert cmd == "LC_ALL=C sudo -n dmesg --no-pager | tail -n 50"
+    assert cmd == "LC_ALL=C sudo -n dmesg | tail -n 50"
 
 
 def test_ethtool_sudo(monkeypatch):
@@ -106,7 +106,7 @@ def test_builders_no_sudo_by_default():
         "LC_ALL=C smartctl"
     )
     assert net.build_remote_cmd_nft_list() == "LC_ALL=C nft -nn list ruleset"
-    assert kernel.build_remote_cmd_dmesg() == "LC_ALL=C dmesg --no-pager"
+    assert kernel.build_remote_cmd_dmesg() == "LC_ALL=C dmesg"
 
 
 def test_non_privileged_tool_not_prefixed(monkeypatch):

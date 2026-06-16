@@ -156,6 +156,46 @@ APT_LIST_INSTALLED_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
+# reboot_required (Debian/Ubuntu pending-reboot flag + package list)
+# ---------------------------------------------------------------------------
+
+# Fixed bundled script. No user interpolation. Pure reads; no needrestart (which
+# can restart services) to honor the read-only invariant.
+_REBOOT_REQUIRED_SCRIPT = (
+    "{ test -f /var/run/reboot-required && echo 'reboot-required: yes' "
+    "|| echo 'reboot-required: no'; }; "
+    "echo '---pending-packages---'; "
+    "cat /var/run/reboot-required.pkgs 2>/dev/null || true"
+)
+
+
+def build_remote_cmd_reboot_required() -> str:
+    """Build the fixed reboot-required probe as a single LC_ALL=C sh -c command."""
+    return "LC_ALL=C sh -c " + shlex.quote(_REBOOT_REQUIRED_SCRIPT)
+
+
+def handle_reboot_required(args: dict) -> dict:
+    host = validate_host(args["host"])
+    cmd = build_remote_cmd_reboot_required()
+    res = run_ssh(host, cmd)
+    return {
+        "stdout": _decode_text(res.stdout),
+        "stderr": _decode_text(res.stderr),
+        "exit_code": res.exit_code,
+        "truncated": res.truncated,
+        "stderr_truncated": res.stderr_truncated,
+    }
+
+
+REBOOT_REQUIRED_SCHEMA = {
+    "type": "object",
+    "properties": {"host": {"type": "string"}},
+    "required": ["host"],
+    "additionalProperties": False,
+}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -189,5 +229,16 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=APT_LIST_INSTALLED_SCHEMA,
         handler=handle_apt_list_installed,
+    ),
+    ToolSpec(
+        name="reboot_required",
+        description=(
+            "Report pending-reboot state on Debian/Ubuntu via SSH: the "
+            "/var/run/reboot-required flag plus /var/run/reboot-required.pkgs (packages that "
+            "triggered it). Pure reads only (no needrestart). Returns stdout, stderr, "
+            "exit_code, truncated."
+        ),
+        input_schema=REBOOT_REQUIRED_SCHEMA,
+        handler=handle_reboot_required,
     ),
 ]

@@ -22,37 +22,56 @@ def _stub(monkeypatch, result):
 
 
 def test_dmesg_default_builder():
-    assert mod.build_remote_cmd_dmesg() == "LC_ALL=C dmesg --no-pager"
+    # dmesg has no --no-pager option; injecting it broke the tool on stock Linux.
+    assert mod.build_remote_cmd_dmesg() == "LC_ALL=C dmesg"
 
 
 def test_dmesg_human_builder():
     cmd = mod.build_remote_cmd_dmesg(human=True)
-    assert cmd == "LC_ALL=C dmesg --no-pager -H"
+    assert cmd == "LC_ALL=C dmesg -H"
 
 
 def test_dmesg_time_iso_builder():
     cmd = mod.build_remote_cmd_dmesg(time_iso=True)
-    assert cmd == "LC_ALL=C dmesg --no-pager --time-format=iso"
+    assert cmd == "LC_ALL=C dmesg --time-format=iso"
 
 
 def test_dmesg_kernel_only_builder():
     cmd = mod.build_remote_cmd_dmesg(kernel_only=True)
-    assert cmd == "LC_ALL=C dmesg --no-pager -k"
+    assert cmd == "LC_ALL=C dmesg -k"
 
 
 def test_dmesg_human_with_kernel_only_allowed():
     cmd = mod.build_remote_cmd_dmesg(human=True, kernel_only=True)
-    assert cmd == "LC_ALL=C dmesg --no-pager -H -k"
+    assert cmd == "LC_ALL=C dmesg -H -k"
 
 
 def test_dmesg_level_facility_builder():
     cmd = mod.build_remote_cmd_dmesg(level="err", facility="kern")
-    assert cmd == "LC_ALL=C dmesg --no-pager --level=err --facility=kern"
+    assert cmd == "LC_ALL=C dmesg --level=err --facility=kern"
+
+
+def test_dmesg_level_comma_list_builder():
+    # dmesg --level accepts a comma-separated list; both tokens must be valid.
+    cmd = mod.build_remote_cmd_dmesg(level="err,warn")
+    assert cmd == "LC_ALL=C dmesg --level=err,warn"
+
+
+def test_dmesg_handler_accepts_level_comma_list(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"x\n", b"", 0, False))
+    mod.handle_dmesg({"host": "h1", "level": "err,warn,crit"})
+    assert captured["cmd"] == "LC_ALL=C dmesg --level=err,warn,crit"
+
+
+def test_dmesg_handler_rejects_bad_token_in_level_list(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_dmesg({"host": "h1", "level": "err,bogus"})
 
 
 def test_dmesg_tail_lines_builder():
     cmd = mod.build_remote_cmd_dmesg(time_iso=True, tail_lines=50)
-    assert cmd == "LC_ALL=C dmesg --no-pager --time-format=iso | tail -n 50"
+    assert cmd == "LC_ALL=C dmesg --time-format=iso | tail -n 50"
 
 
 def test_dmesg_rejects_human_with_time_iso():
@@ -127,9 +146,7 @@ def test_dmesg_handler_happy(monkeypatch):
         "truncated": False,
         "stderr_truncated": False,
     }
-    assert captured["cmd"] == (
-        "LC_ALL=C dmesg --no-pager --time-format=iso --level=err | tail -n 100"
-    )
+    assert captured["cmd"] == ("LC_ALL=C dmesg --time-format=iso --level=err | tail -n 100")
 
 
 def test_dmesg_truncated_propagates(monkeypatch):

@@ -478,6 +478,49 @@ LSUSB_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
+# sensors (lm-sensors hardware monitoring)
+# ---------------------------------------------------------------------------
+
+
+def build_remote_cmd_sensors(*, json: bool = False, fahrenheit: bool = False) -> str:
+    """Build LC_ALL=C sensors command string."""
+    parts = ["LC_ALL=C", "sensors"]
+    if json:
+        parts.append("-j")
+    if fahrenheit:
+        parts.append("-f")
+    return " ".join(parts)
+
+
+def handle_sensors(args: dict) -> dict:
+    host = validate_host(args["host"])
+    cmd = build_remote_cmd_sensors(
+        json=_bool(args.get("json"), "json"),
+        fahrenheit=_bool(args.get("fahrenheit"), "fahrenheit"),
+    )
+    res = run_ssh(host, cmd)
+    return {
+        "stdout": _decode_text(res.stdout),
+        "stderr": _decode_text(res.stderr),
+        "exit_code": res.exit_code,
+        "truncated": res.truncated,
+        "stderr_truncated": res.stderr_truncated,
+    }
+
+
+SENSORS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "host": {"type": "string"},
+        "json": {"type": ["boolean", "null"]},
+        "fahrenheit": {"type": ["boolean", "null"]},
+    },
+    "required": ["host"],
+    "additionalProperties": False,
+}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -550,5 +593,15 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=LSUSB_SCHEMA,
         handler=handle_lsusb,
+    ),
+    ToolSpec(
+        name="sensors",
+        description=(
+            "Run 'sensors' (lm-sensors) on a remote host via SSH for thermal/fan/voltage "
+            "readings; optional json (-j) and fahrenheit (-f). lm-sensors may be absent "
+            "(127 passthrough) or empty on VMs. Returns stdout, stderr, exit_code, truncated."
+        ),
+        input_schema=SENSORS_SCHEMA,
+        handler=handle_sensors,
     ),
 ]

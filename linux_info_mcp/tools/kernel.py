@@ -27,8 +27,12 @@ _DMESG_FACILITIES = {"kern", "user", "mail", "daemon", "auth", "syslog", "lpr", 
 
 
 def _validate_dmesg_level(level) -> str:
-    if not isinstance(level, str) or level not in _DMESG_LEVELS:
+    # dmesg --level accepts a comma-separated list; validate each token.
+    if not isinstance(level, str) or not level:
         raise ValueError(f"level must be one of {sorted(_DMESG_LEVELS)}")
+    for tok in level.split(","):
+        if tok not in _DMESG_LEVELS:
+            raise ValueError(f"level tokens must each be one of {sorted(_DMESG_LEVELS)}")
     return level
 
 
@@ -50,7 +54,7 @@ def build_remote_cmd_dmesg(
     """Build LC_ALL=C dmesg command string."""
     if human and time_iso:
         raise ValueError("human is mutually exclusive with time_iso")
-    parts = ["LC_ALL=C", *sudo_tokens(), "dmesg", "--no-pager"]
+    parts = ["LC_ALL=C", *sudo_tokens(), "dmesg"]
     if human:
         parts.append("-H")
     if time_iso:

@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 70 tools across 16 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 72 tools across 16 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -407,12 +407,12 @@ Parsing is **optional per tool** (`ToolSpec.parser`). When `output_mode` is non-
 - `human: bool | None` — `-H`. Mutually exclusive with `time_iso`.
 - `time_iso: bool | None` — `--time-format=iso`.
 - `kernel_only: bool | None` — `-k`. Restricts output to kernel-facility messages.
-- `level: str | None` — whitelist: `emerg`, `alert`, `crit`, `err`, `warn`, `notice`, `info`, `debug`. → `--level=<val>`.
+- `level: str | None` — comma-separated list; each token whitelisted from `emerg`, `alert`, `crit`, `err`, `warn`, `notice`, `info`, `debug` (e.g. `err,warn`). → `--level=<val>`.
 - `facility: str | None` — whitelist: `kern`, `user`, `mail`, `daemon`, `auth`, `syslog`, `lpr`, `news`. → `--facility=<val>`.
 - `tail_lines: int | None` — range 1–10000. → pipe `| tail -n <N>`.
 
 **Behavior**
-- Remote command: `dmesg --no-pager [flags...] [| tail -n <N>]`.
+- Remote command: `LC_ALL=C dmesg [flags...] [| tail -n <N>]`. (`dmesg` has no `--no-pager` option — passing it broke the tool; it is not emitted.)
 
 **Returns** `{stdout, stderr, exit_code, truncated}`.
 
@@ -960,7 +960,7 @@ Gather host facts in a **single SSH round-trip** by running a fixed bundled shel
 | `now_utc` | `str \| None` | ISO-8601 UTC timestamp |
 | `whoami` | `str \| None` | Effective username |
 
-**Capability → tool mapping.** `capabilities` probes: `docker`/`podman` (docker_* tools), `systemctl` (systemctl_*, systemd_analyze), `nft` (nft_list), `iptables` (iptables_list), `conntrack` (conntrack), `ethtool` (ethtool), `tc` (tc_qdisc), `ss` (ss), `lsof` (lsof, lsof_net), `smartctl` (smartctl), `blockdev` (blockdev), `lsblk` (lsblk), `numastat` (numastat), `slabtop` (slabtop), `lldpctl` (lldp_*), `chronyc` (chronyc), `dmidecode` (dmidecode), `iostat` (iostat), `vmstat` (vmstat), `dpkg` (dpkg_list, apt_list_installed), `rpm` (rpm_list). A `False` entry means that tool will fail with `not_found`; call `host_facts` first to avoid the round-trip.
+**Capability → tool mapping.** `capabilities` probes: `docker`/`podman` (docker_* tools), `systemctl` (systemctl_*, systemd_analyze), `nft` (nft_list), `iptables` (iptables_list), `conntrack` (conntrack), `ethtool` (ethtool), `tc` (tc_qdisc), `ss` (ss), `lsof` (lsof, lsof_net), `smartctl` (smartctl), `blockdev` (blockdev), `lsblk` (lsblk), `numastat` (numastat), `slabtop` (slabtop), `lldpctl` (lldp_*), `chronyc` (chronyc), `dmidecode` (dmidecode), `iostat` (iostat), `vmstat` (vmstat), `dpkg` (dpkg_list, apt_list_installed), `rpm` (rpm_list), `sensors` (sensors). A `False` entry means that tool will fail with `not_found`; call `host_facts` first to avoid the round-trip.
 
 ---
 
@@ -1028,10 +1028,10 @@ One SSH round-trip health summary. Runs a fixed bundled probe script (no user in
 - `host: str` — required. (No other args in v1; thresholds are fixed.)
 
 **Behavior**
-- Remote command: `LC_ALL=C sh -c '<script>'` bundling: `/proc/loadavg`, `nproc`, filtered `/proc/meminfo` (`MemTotal`/`MemAvailable`/`SwapTotal`/`SwapFree`), `df -P -l -x tmpfs -x devtmpfs -x overlay` (overlay excluded so docker layer mounts don't duplicate their backing fs), `systemctl --failed --no-legend --plain`, `/proc/pressure/{cpu,memory,io}`, and recent `dmesg` OOM/kill lines.
+- Remote command: `LC_ALL=C sh -c '<script>'` bundling: `/proc/loadavg`, `nproc`, filtered `/proc/meminfo` (`MemTotal`/`MemAvailable`/`SwapTotal`/`SwapFree`), `df -P -l -x tmpfs -x devtmpfs -x overlay` (overlay excluded so docker layer mounts don't duplicate their backing fs), `systemctl --failed --no-legend --plain`, `/proc/pressure/{cpu,memory,io}`, recent `dmesg` OOM/kill lines, `df -P -i` (inodes), `ps -eo stat=` (zombie/D-state counts), `ps -eo pid=,comm=,pcpu=,pmem= --sort=-pcpu | head -n 5` (top CPU), `chronyc -n tracking` (clock), `/proc/sys/net/netfilter/nf_conntrack_{count,max}`, `/var/run/reboot-required` (flag), `/proc/sys/kernel/tainted`, and `/proc/net/dev` (NIC err/drop).
 - Parsing is pure and never raises; missing sections yield `null`/empty fields, not errors.
 
-**Thresholds** (warning kinds): `high_load` (load1/nproc ≥ 1.5, `crit` ≥ 4.0), `low_memory` (MemAvailable < 10% of total, `crit` < 5%), `swap_pressure` (swap > 50% used), `disk_full` (mount ≥ 90%, `crit` ≥ 95%; one per mount), `failed_units` (any failed unit), `pressure` (PSI some avg10 > 20 per resource), `oom_recent` (recent OOM/kill lines).
+**Thresholds** (warning kinds): `high_load` (load1/nproc ≥ 1.5, `crit` ≥ 4.0), `low_memory` (MemAvailable < 10% of total, `crit` < 5%), `swap_pressure` (swap > 50% used), `disk_full` (mount ≥ 90%, `crit` ≥ 95%; one per mount), `inodes_full` (mount IUse% ≥ 90%, `crit` ≥ 95%; one per mount), `failed_units` (any failed unit), `pressure` (PSI some avg10 > 20 per resource), `oom_recent` (recent OOM/kill lines), `zombie_procs` (≥ 1 zombie), `stuck_procs` (≥ 5 in D state), `clock_skew` (|NTP offset| > 0.1s), `clock_unsynced` (chrony leap status ≠ Normal), `conntrack_full` (count/max ≥ 90%, `crit` ≥ 95%), `reboot_required` (flag present), `kernel_tainted` (taint mask ≠ 0), `nic_errors` (per-iface err+drop ≥ 100 and > 1% of packets).
 
 **Returns**
 ```
@@ -1044,7 +1044,16 @@ One SSH round-trip health summary. Runs a fixed bundled probe script (no user in
     "disks": [ {"mount": str, "use_pct": int} ],
     "failed_units": [str],
     "psi": {"cpu": float|null, "memory": float|null, "io": float|null},
-    "oom_recent": [str]
+    "oom_recent": [str],
+    "inodes": [ {"mount": str, "use_pct": int} ],
+    "zombie": int, "dstate": int,
+    "top_cpu": [ {"pid": int, "comm": str, "pcpu": float|null, "pmem": float|null} ],
+    "clock": {"offset_s": float|null, "leap": str|null},
+    "conntrack": {"count": int|null, "max": int|null},
+    "reboot_required": bool,
+    "kernel_tainted": int|null,
+    "net_errors": [ {"iface": str, "rx_packets": int, "rx_errs": int, "rx_drop": int,
+                     "tx_packets": int, "tx_errs": int, "tx_drop": int} ]
   },
   "stdout": "...", "stderr": "...", "exit_code": 0,
   "truncated": false, "stderr_truncated": false
@@ -1104,6 +1113,32 @@ Run `lsusb` (USB device enumeration) on a remote host. Read-only.
 **Behavior**
 - Remote command: `LC_ALL=C lsusb [-v] [-t]`. No interpolated values; all options are fixed literals.
 - No root required for basic enumeration; full `-v` descriptors may need root.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+### 71. `reboot_required`
+
+Report pending-reboot state on Debian/Ubuntu. Read-only; pure file reads (no `needrestart`, which can restart services).
+
+**Args**
+- `host: str` — required. (No other args; fixed probe.)
+
+**Behavior**
+- Remote command: `LC_ALL=C sh -c '<script>'` (fixed, no interpolation): emits `reboot-required: yes|no` from the presence of `/var/run/reboot-required`, then a `---pending-packages---` marker, then `cat /var/run/reboot-required.pkgs` (the packages that triggered it; empty on non-Debian or when no reboot is pending).
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+### 72. `sensors`
+
+Run `sensors` (lm-sensors) on a remote host for thermal/fan/voltage readings. Read-only. Capability-gated (`host_facts.capabilities.sensors`); absent on hosts without lm-sensors and typically empty on VMs.
+
+**Args**
+- `host: str` — required.
+- `json: bool | None` — `-j` (JSON output).
+- `fahrenheit: bool | None` — `-f` (Fahrenheit).
+
+**Behavior**
+- Remote command: `LC_ALL=C sensors [-j] [-f]`. No interpolated values; all options are fixed literals.
 
 **Returns** `{stdout, stderr, exit_code, truncated}`.
 
@@ -1189,8 +1224,8 @@ linux-info-mcp/
       proc.py                # lsof, pgrep, pidof, top, proc_limits
       disk.py                # du, lsblk, blkid, smartctl, blockdev
       kernel.py              # dmesg, uname, sysctl, slabtop, numastat, cgroup_stats, systemd_analyze
-      pkg.py                 # dpkg_list, rpm_list, apt_list_installed
-      sys.py                 # uptime, who, last, lscpu, lsmem, dmidecode, lspci, lsusb
+      pkg.py                 # dpkg_list, rpm_list, apt_list_installed, reboot_required
+      sys.py                 # uptime, who, last, lscpu, lsmem, dmidecode, lspci, lsusb, sensors
       time.py                # chronyc, timedatectl
       fs.py                  # mount, findmnt, stat_fs
       docker.py              # docker_ps, docker_inspect, docker_images, docker_logs
@@ -1227,7 +1262,7 @@ linux-info-mcp/
   SECURITY.md                # threat model + reporting
 ```
 
-70 tools across 16 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
+72 tools across 16 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 
