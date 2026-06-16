@@ -43,6 +43,10 @@ TOOL_ARGS: dict[str, list[dict]] = {
     "dmidecode": [{"type": "system"}],
     "lspci": [{"numeric": True}],
     "lsusb": [{}],
+    # sys: sensors needs lm-sensors; absent/empty on VMs yields error baseline, fine.
+    "sensors": [{}, {"json": True}],
+    # pkg: reboot_required reads Debian/Ubuntu flag files; host-only, safe on stock Linux.
+    "reboot_required": [{}],
     # time
     "chronyc": [{"subcommand": "tracking"}],
     "timedatectl": [{"mode": "status"}],

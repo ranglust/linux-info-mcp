@@ -35,6 +35,7 @@ _CAP_TOOLS = [
     "vmstat",
     "dpkg",
     "rpm",
+    "sensors",
 ]
 
 _VM_DMI_SIGNATURES = (

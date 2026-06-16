@@ -516,6 +516,53 @@ def test_lsusb_truncated_propagates(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# sensors
+# ---------------------------------------------------------------------------
+
+
+def test_sensors_default_builder():
+    assert mod.build_remote_cmd_sensors() == "LC_ALL=C sensors"
+
+
+def test_sensors_json_builder():
+    assert mod.build_remote_cmd_sensors(json=True) == "LC_ALL=C sensors -j"
+
+
+def test_sensors_fahrenheit_builder():
+    assert mod.build_remote_cmd_sensors(fahrenheit=True) == "LC_ALL=C sensors -f"
+
+
+def test_sensors_json_and_fahrenheit_builder():
+    assert mod.build_remote_cmd_sensors(json=True, fahrenheit=True) == "LC_ALL=C sensors -j -f"
+
+
+def test_sensors_handler_happy(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"coretemp\n", b"", 0, False))
+    out = mod.handle_sensors({"host": "h1", "json": True})
+    assert out["stdout"] == "coretemp\n"
+    assert out["exit_code"] == 0
+    assert captured["cmd"] == "LC_ALL=C sensors -j"
+
+
+def test_sensors_rejects_bad_host(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_sensors({"host": "-oProxyCommand=evil"})
+
+
+def test_sensors_rejects_non_bool_json(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_sensors({"host": "h1", "json": "yes"})
+
+
+def test_sensors_truncation_propagates(monkeypatch):
+    _stub(monkeypatch, SshResult(b"x", b"", 0, True))
+    out = mod.handle_sensors({"host": "h1"})
+    assert out["truncated"] is True
+
+
 def test_tools_registry_names():
     names = [t.name for t in mod.TOOLS]
     assert names == [
@@ -527,6 +574,7 @@ def test_tools_registry_names():
         "dmidecode",
         "lspci",
         "lsusb",
+        "sensors",
     ]
     for spec in mod.TOOLS:
         assert "host" in spec.input_schema["required"]
