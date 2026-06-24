@@ -4,7 +4,7 @@ Operating notes for AI coding agents working in this repo. Authoritative spec is
 
 ## What this is
 
-MCP (Model Context Protocol) server, Python, SSH-based read-only diagnostics. Per call targets a single `host` or a bounded parallel `hosts` fan-out. Exposes 72 tools today across 16 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`, `dig`), lldp (`lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`), proc (`lsof`, `pgrep`, `pidof`, `top`, `proc_limits`), disk (`du`, `lsblk`, `blkid`, `smartctl`, `blockdev`), kernel (`dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`, `reboot_required`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`, `lspci`, `lsusb`, `sensors`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`), facts (`host_facts`), triage (`triage`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
+MCP (Model Context Protocol) server, Python, SSH-based read-only diagnostics. Per call targets a single `host` or a bounded parallel `hosts` fan-out. Exposes 75 tools today across 17 modules: files (`read_file`, `find_files`, `read_binary`), systemd (`systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`, `journalctl`), perf (`iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`), sampling (`sar`, `atop`, `pmrep`), net (`ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`, `dig`), lldp (`lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`), proc (`lsof`, `pgrep`, `pidof`, `top`, `proc_limits`), disk (`du`, `lsblk`, `blkid`, `smartctl`, `blockdev`), kernel (`dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`), pkg (`dpkg_list`, `rpm_list`, `apt_list_installed`, `reboot_required`), sys (`uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`, `lspci`, `lsusb`, `sensors`), time (`chronyc`, `timedatectl`), fs (`mount`, `findmnt`, `stat_fs`), docker (`docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`), facts (`host_facts`), triage (`triage`). Auto-discovers tools from `linux_info_mcp/tools/*.py`.
 
 Read `SPEC.md` first before implementing or modifying any tool. SPEC defines arg schemas, validators, env vars, security model, logging events, and architecture. Drift from SPEC = bug.
 
@@ -22,7 +22,8 @@ linux_info_mcp/
     files.py       # read_file, find_files, read_binary
     systemctl.py   # systemctl_status, systemctl_list
     journalctl.py  # journalctl
-    perf.py        # iostat, vmstat, free, df, ps
+    perf.py        # iostat, vmstat, free, df, ps, psi_stats, meminfo
+    sampling.py    # sar, atop, pmrep
     net.py         # ss, ip_addr, ip_route, lsof_net
     lldp.py        # lldp_neighbors, lldp_interfaces, lldp_statistics, lldp_chassis
     proc.py        # lsof, pgrep, pidof, top

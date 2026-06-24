@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 72 tools across 16 modules (files, systemd, journalctl, perf, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 75 tools across 17 modules (files, systemd, journalctl, perf, sampling, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -1144,6 +1144,63 @@ Run `sensors` (lm-sensors) on a remote host for thermal/fan/voltage readings. Re
 
 ---
 
+### 73. `sar`
+
+Run `sar` (sysstat) on a remote host for historical/live system activity. Read-only. Privilege-prone (`sudo -n` when `LINUX_INFO_SUDO`).
+
+**Args**
+- `host: str` — required.
+- `metrics: list[str] | None` — subset of `cpu` (`-u`), `mem` (`-r`), `io` (`-b`), `net-dev` (`-n DEV`), `net-edev` (`-n EDEV`), `net-sock` (`-n SOCK`), `disk` (`-d -p`), `load` (`-q`), `swap` (`-W`), `paging` (`-B`), `ctxt` (`-w`), or `all` (`-A`, used alone). Whitelist-validated; duplicates collapsed, order preserved. Default `["cpu"]`.
+- `file: str | None` — saved sysstat data file (`-f`), e.g. `/var/log/sysstat/sa23`. `validate_path`, `shlex.quote`-escaped.
+- `start: str | None` / `end: str | None` — `-s`/`-e` time window, `HH:MM` or `HH:MM:SS` (`re.fullmatch`). Require `file`.
+- `interval: int | None` / `count: int | None` — live sampling, `[1,60]` / `[1,100]`. `count` requires `interval`. Mutually exclusive with `file`.
+
+**Behavior**
+- Remote command: `LC_ALL=C [sudo -n] sar <metric flags> [-f <file>] [-s <start>] [-e <end>] [<interval> [<count>]]`. Metric flags are fixed literals; `file`/`start`/`end` are `shlex.quote`-escaped.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+---
+
+### 74. `atop`
+
+Run `atop` on a remote host. Non-interactive only: live one-shot sampling or raw-log replay. Read-only. Privilege-prone (`sudo -n` when `LINUX_INFO_SUDO`).
+
+**Args**
+- `host: str` — required.
+- `mode: str | None` — display view: `general` (`-g`), `memory` (`-m`), `disk` (`-d`), `network` (`-n`), `command` (`-c`), `scheduling` (`-s`), `various` (`-v`). Mutually exclusive with `labels`.
+- `labels: list[str] | None` — parseable `-P` labels, whitelist: `CPU,CPL,MEM,SWP,PAG,PSI,LVM,MDD,DSK,NFM,NFC,NFS,NET,PRG,PRC,PRM,PRD,PRN,PRE,ALL`. Joined with commas.
+- `file: str | None` — raw log (`-r`), e.g. `/var/log/atop/atop_20260623`. `validate_path`, `shlex.quote`-escaped.
+- `begin: str | None` / `end: str | None` — `-b`/`-e` time window, `HH:MM` or `HH:MM:SS`. Require `file`.
+- `interval: int | None` / `count: int | None` — live sampling, `[1,60]` / `[1,100]`. Mutually exclusive with `file`. Live always emits an interval+count (defaults `1 1`) so non-tty atop cannot hang.
+
+**Behavior**
+- Replay: `LC_ALL=C [sudo -n] atop -r <file> [<view>] [-b <begin>] [-e <end>]`.
+- Live: `LC_ALL=C [sudo -n] atop [<view>] <interval> <count>`.
+- View tokens (`-g`/`-m`/… or `-P <labels>`) are fixed/whitelisted literals; `file`/`begin`/`end` are `shlex.quote`-escaped.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+---
+
+### 75. `pmrep`
+
+Run `pmrep` (Performance Co-Pilot) on a remote host using a preset config. Read-only. Privilege-prone (`sudo -n` when `LINUX_INFO_SUDO`).
+
+**Args**
+- `host: str` — required.
+- `config: str | None` — preset name mapped to a `:name` pmrep config: `vmstat`, `iostat`, `mpstat`, `pidstat`, `free`, `sar`, `tcp`. Default `vmstat`.
+- `interval: int | None` — `-t` seconds, `[1,60]`. Default `1`.
+- `samples: int | None` — `-s` sample count, `[1,100]`. Default `1`.
+- `archive: str | None` — PCP archive to replay (`-a`). `validate_path`, `shlex.quote`-escaped.
+
+**Behavior**
+- Remote command: `LC_ALL=C [sudo -n] pmrep [-a <archive>] -t <interval> -s <samples> :<config>`. Config token is a fixed whitelisted literal; `archive` is `shlex.quote`-escaped.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+---
+
 ## Configuration (environment variables)
 
 | Var | Default | Meaning |
@@ -1219,6 +1276,7 @@ linux-info-mcp/
       systemctl.py           # systemctl_status, systemctl_list, systemctl_list_timers, systemctl_list_sockets
       journalctl.py          # journalctl
       perf.py                # iostat, vmstat, free, df, ps, psi_stats, meminfo
+      sampling.py            # sar, atop, pmrep
       net.py                 # ss, ip_addr, ip_route, lsof_net, arp_table, tc_qdisc, ethtool, conntrack, net_protocol_stats, nft_list, iptables_list, dig
       lldp.py                # lldp_neighbors, lldp_interfaces, lldp_statistics, lldp_chassis
       proc.py                # lsof, pgrep, pidof, top, proc_limits
@@ -1262,7 +1320,7 @@ linux-info-mcp/
   SECURITY.md                # threat model + reporting
 ```
 
-72 tools across 16 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
+75 tools across 17 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 

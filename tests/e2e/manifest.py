@@ -24,6 +24,11 @@ TOOL_ARGS: dict[str, list[dict]] = {
     "df": [{}, {"output_mode": "parsed"}],
     "free": [{}, {"output_mode": "parsed"}],
     "ps": [{}],
+    # sampling: atop/sar/pmrep often absent on stock Linux (error baseline, which
+    # the compare step matches). Live one-shot args; no file/archive replay.
+    "sar": [{"metrics": ["cpu"], "interval": 1, "count": 1}],
+    "atop": [{"mode": "memory", "interval": 1, "count": 1}],
+    "pmrep": [{"config": "vmstat", "interval": 1, "samples": 1}],
     # triage meta-tool (host-only, safe on stock Linux)
     "triage": [{}],
     # net
