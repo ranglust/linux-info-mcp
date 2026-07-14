@@ -59,12 +59,16 @@ Parsing is **optional per tool** (`ToolSpec.parser`). When `output_mode` is non-
 - `path: str` (required, absolute path recommended)
 - `grep_pattern: str | None`
 - `grep_flags: list[str] | None` — whitelist: `-i`, `-E`, `-v`, `-n`, `-w`, `-F`, and `-C<N>` where `N` is digits 1–9.
+- `decompress: bool | None` — if true, decompress before reading; codec auto-detected from the path extension.
+- `codec: str | None` — explicit codec override, one of `gzip`, `zstd`, `xz`, `bzip2`, `lz4`. Setting it implies decompression regardless of `decompress`.
 
 **Behavior**
-- If `grep_pattern` is `None`: remote command is `cat -- <path>`.
-- Else: `cat -- <path> | grep <flags...> -e <pattern> --`.
+- Codec resolution: explicit `codec` wins (whitelist membership; else `validation_error`); else if `decompress` is true, infer from the path's last extension (`gz`/`z`→gzip, `zst`→zstd, `xz`→xz, `bz2`→bzip2, `lz4`→lz4), rejecting an unrecognized extension; else no decompression.
+- Source is `cat -- <path>` (no codec) or `<codec-cmd> -dc -- <path>` (e.g. `gzip -dc -- <path>`). The codec name selects a hard-coded command; it is never interpolated into the shell.
+- If `grep_pattern` is `None`: remote command is `<source>`.
+- Else: `<source> | grep <flags...> -e <pattern> --` — grep runs on the decompressed text.
 - `grep_pattern` is passed via `-e <pat>` so a pattern beginning with `-` is not interpreted as a flag.
-- Truncate stdout at `LINUX_INFO_MAX_BYTES`. If truncated, response includes `truncated: true`.
+- Truncate stdout at `LINUX_INFO_MAX_BYTES`. If truncated, response includes `truncated: true`. This also caps decompression bombs.
 
 **Returns** (JSON object)
 ```
@@ -102,9 +106,11 @@ Parsing is **optional per tool** (`ToolSpec.parser`). When `output_mode` is non-
 - `path: str` (required)
 - `offset: int` (required, non-negative)
 - `length: int` (required, positive). Hard cap = `floor((LINUX_INFO_MAX_BYTES - 8) * 3 / 4)` so the base64-encoded stream fits within the stdout cap. The remote `base64 -w 0` produces a single line so the only overhead is a trailing newline + small margin. Validator rejects above the cap rather than silently clamping.
+- `decompress: bool | None` / `codec: str | None` — same codec resolution as `read_file`. When set, `offset`/`length` apply to the *decompressed* stream.
 
 **Behavior**
-- Remote command: `dd if=<path> ibs=1 skip=<offset> count=<length> status=none | base64 -w 0`.
+- Remote command (no codec): `dd if=<path> ibs=1 skip=<offset> count=<length> status=none | base64 -w 0`.
+- Remote command (codec): `<codec-cmd> -dc -- <path> | dd ibs=1 skip=<offset> count=<length> status=none | base64 -w 0`.
 - Decode base64 server-side, return bytes re-encoded as base64 in response (so MCP transport stays text-safe).
 - If `run_ssh` truncated stdout, propagate `truncated: true`.
 - If base64 decode of remote output fails, return `bytes_read: 0`, `exit_code: 1` (only if remote exit_code was 0; otherwise pass through), and append `[base64 decode failed]` to `stderr`.
@@ -1198,6 +1204,45 @@ Run `pmrep` (Performance Co-Pilot) on a remote host using a preset config. Read-
 - Remote command: `LC_ALL=C [sudo -n] pmrep [-a <archive>] -t <interval> -s <samples> :<config>`. Config token is a fixed whitelisted literal; `archive` is `shlex.quote`-escaped.
 
 **Returns** `{stdout, stderr, exit_code, truncated}`.
+
+---
+
+### 76. `archive_list`
+
+List the members of a tar-family or zip archive on a remote host. Read-only.
+
+**Args**
+- `host: str` — required.
+- `path: str` — required. `validate_path`, `shlex.quote`-escaped.
+- `format: str | None` — explicit archive format, one of `tar`, `tar.gz`, `tar.xz`, `tar.bz2`, `tar.zst`, `zip`. Auto-detected from the path extension when omitted (`.tar.gz`/`.tgz`, `.tar.xz`/`.txz`, `.tar.bz2`/`.tbz`/`.tbz2`, `.tar.zst`/`.tzst`, `.tar`, `.zip`); unknown extension → `validation_error`.
+
+**Behavior**
+- tar: `LC_ALL=C tar -t <comp> -f <path>` where `<comp>` is the fixed flag for the format (`-z`/`-J`/`-j`/`--zstd`, none for plain tar).
+- zip: `LC_ALL=C unzip -l <path>`.
+- Format selects hard-coded command fragments; the format string is never interpolated.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+---
+
+### 77. `archive_read`
+
+Read a single member from a tar-family or zip archive on a remote host. Read-only.
+
+**Args**
+- `host: str` — required.
+- `path: str` — required. `validate_path`, `shlex.quote`-escaped.
+- `member: str` — required. The member path inside the archive. NUL/newline rejected, leading `-` rejected (flag injection), `shlex.quote`-escaped.
+- `format: str | None` — same resolution as `archive_list`.
+- `grep_pattern: str | None` / `grep_flags: list[str] | None` — text mode only; same semantics as `read_file`.
+- `binary: bool | None` — if true, return base64-encoded bytes instead of text. Mutually exclusive with `grep_pattern` (→ `validation_error`).
+
+**Behavior**
+- Extract-to-stdout source: tar → `LC_ALL=C tar -xO <comp> -f <path> -- <member>`; zip → `LC_ALL=C unzip -p <path> <member>`. `-O`/`-p` stream to stdout only (no filesystem write, so an in-archive `..` member cannot traverse).
+- Text mode (default): optional `| grep <flags...> -e <pattern> --`. Returns `{stdout, stderr, exit_code, truncated}`.
+- Binary mode: append `| base64 -w 0`; decode server-side and re-encode. Same base64-failure handling as `read_binary`. Returns `{data_base64, bytes_read, stderr, exit_code, truncated}`.
+
+**Returns** See above (mode-dependent).
 
 ---
 

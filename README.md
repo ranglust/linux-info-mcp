@@ -6,6 +6,7 @@
 MCP server that runs read-only diagnostic commands on remote hosts via SSH. 75 tools across 17 modules:
 
 - files: `read_file`, `find_files`, `read_binary`
+- archive: `archive_list`, `archive_read`
 - systemctl: `systemctl_status`, `systemctl_list`, `systemctl_list_timers`, `systemctl_list_sockets`
 - journalctl: `journalctl`
 - perf: `iostat`, `vmstat`, `free`, `df`, `ps`, `psi_stats`, `meminfo`

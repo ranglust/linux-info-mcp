@@ -13,9 +13,16 @@ from __future__ import annotations
 
 TOOL_ARGS: dict[str, list[dict]] = {
     # files
-    "read_file": [{"path": "/etc/hostname"}],
+    "read_file": [
+        {"path": "/etc/hostname"},
+        # man pages are gzip on most distros; error baseline where absent.
+        {"path": "/usr/share/man/man1/ls.1.gz", "decompress": True, "grep_pattern": "NAME"},
+    ],
     "read_binary": [{"path": "/etc/hostname", "offset": 0, "length": 16}],
     "find_files": [{"path": "/etc", "name": "*.conf", "maxdepth": 1}],
+    # archive: no universal archive on stock Linux -> error baseline placeholders.
+    "archive_list": [{"path": "/nonexistent.tar.gz"}],
+    "archive_read": [{"path": "/nonexistent.tar.gz", "member": "etc/hosts"}],
     # systemd
     "systemctl_status": [{"unit": "systemd-journald.service"}],
     "systemctl_list": [{}],

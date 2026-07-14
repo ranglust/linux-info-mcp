@@ -19,6 +19,34 @@ _SIZE_RE = re.compile(r"^[+-]?\d+[bcwkMG]?$")
 _UNIT_NAME_RE = re.compile(r"^[A-Za-z0-9@:._-]+$")
 _CGROUP_PATH_RE = re.compile(r"^[A-Za-z0-9._:@/\-]+$")
 
+CODEC_WHITELIST: frozenset[str] = frozenset({"gzip", "zstd", "xz", "bzip2", "lz4"})
+_CODEC_EXT = {
+    "gz": "gzip",
+    "z": "gzip",
+    "zst": "zstd",
+    "xz": "xz",
+    "bz2": "bzip2",
+    "lz4": "lz4",
+}
+
+ARCHIVE_FORMAT_WHITELIST: frozenset[str] = frozenset(
+    {"tar", "tar.gz", "tar.xz", "tar.bz2", "tar.zst", "zip"}
+)
+# Longest suffix first so ".tar.gz" wins over ".gz"-style single-part matches.
+_ARCHIVE_EXT = (
+    (".tar.gz", "tar.gz"),
+    (".tar.xz", "tar.xz"),
+    (".tar.bz2", "tar.bz2"),
+    (".tar.zst", "tar.zst"),
+    (".tgz", "tar.gz"),
+    (".txz", "tar.xz"),
+    (".tbz2", "tar.bz2"),
+    (".tbz", "tar.bz2"),
+    (".tzst", "tar.zst"),
+    (".tar", "tar"),
+    (".zip", "zip"),
+)
+
 
 def reject_unsafe_chars(value: str, label: str) -> None:
     if "\x00" in value:
@@ -239,6 +267,53 @@ def resolve_output_mode(args) -> str:
     if arg is not None:
         return arg
     return "raw"
+
+
+def validate_codec(codec_in, decompress: bool, path: str):
+    """Resolve single-stream codec. Explicit codec_in wins (whitelist); else, if
+    decompress, infer from path extension; else None (no decompression)."""
+    if codec_in is not None:
+        if not isinstance(codec_in, str) or codec_in not in CODEC_WHITELIST:
+            raise ValueError(f"codec must be one of {sorted(CODEC_WHITELIST)}")
+        return codec_in
+    if not decompress:
+        return None
+    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    codec = _CODEC_EXT.get(ext)
+    if codec is None:
+        raise ValueError(
+            f"cannot infer codec from path extension {ext!r}; "
+            f"pass codec= (one of {sorted(CODEC_WHITELIST)})"
+        )
+    return codec
+
+
+def validate_archive_format(format_in, path: str) -> str:
+    """Resolve archive format. Explicit format_in wins (whitelist); else infer from
+    path extension. Unknown extension raises."""
+    if format_in is not None:
+        if not isinstance(format_in, str) or format_in not in ARCHIVE_FORMAT_WHITELIST:
+            raise ValueError(f"format must be one of {sorted(ARCHIVE_FORMAT_WHITELIST)}")
+        return format_in
+    low = path.lower()
+    for suffix, fmt in _ARCHIVE_EXT:
+        if low.endswith(suffix):
+            return fmt
+    raise ValueError(
+        f"cannot infer archive format from path {path!r}; "
+        f"pass format= (one of {sorted(ARCHIVE_FORMAT_WHITELIST)})"
+    )
+
+
+def validate_archive_member(member: str) -> str:
+    """A single member path inside an archive. Interpolated into the shell, so
+    reject NUL/newline and leading '-' (flag injection); quoted at build time."""
+    if not isinstance(member, str) or not member:
+        raise ValueError("member must be a non-empty string")
+    reject_unsafe_chars(member, "member")
+    if member.startswith("-"):
+        raise ValueError("member must not start with '-'")
+    return member
 
 
 def validate_cgroup_path(path: str, label: str = "cgroup_path") -> str:

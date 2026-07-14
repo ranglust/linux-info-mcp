@@ -75,14 +75,36 @@ class SshResult:
     stderr_truncated: bool = False
 
 
-def build_remote_cmd_read(path: str, grep_pattern: str | None, grep_flags: list[str] | None) -> str:
+# codec name -> decompress-to-stdout command. Binary is literal, never interpolated.
+CODEC_DECOMP = {
+    "gzip": "gzip -dc",
+    "zstd": "zstd -dc",
+    "xz": "xz -dc",
+    "bzip2": "bzip2 -dc",
+    "lz4": "lz4 -dc",
+}
+
+
+def _read_source(path: str, codec: str | None) -> str:
     qpath = shlex.quote(path)
+    if codec:
+        return f"LC_ALL=C {CODEC_DECOMP[codec]} -- {qpath}"
+    return f"LC_ALL=C cat -- {qpath}"
+
+
+def build_remote_cmd_read(
+    path: str,
+    grep_pattern: str | None,
+    grep_flags: list[str] | None,
+    codec: str | None = None,
+) -> str:
+    src = _read_source(path, codec)
     if grep_pattern is None:
-        return f"LC_ALL=C cat -- {qpath}"
+        return src
     flags = " ".join(shlex.quote(f) for f in (grep_flags or []))
     qpat = shlex.quote(grep_pattern)
     flags_part = (flags + " ") if flags else ""
-    return f"LC_ALL=C cat -- {qpath} | grep {flags_part}-e {qpat} --"
+    return f"{src} | grep {flags_part}-e {qpat} --"
 
 
 def build_remote_cmd_find(path: str, predicates: dict) -> str:
@@ -106,12 +128,15 @@ def build_remote_cmd_find(path: str, predicates: dict) -> str:
     return " ".join(parts)
 
 
-def build_remote_cmd_binary(path: str, offset: int, length: int) -> str:
+def build_remote_cmd_binary(path: str, offset: int, length: int, codec: str | None = None) -> str:
     qpath = shlex.quote(path)
-    return (
-        f"LC_ALL=C dd if={qpath} ibs=1 skip={shlex.quote(str(offset))} "
-        f"count={shlex.quote(str(length))} status=none | base64 -w 0"
-    )
+    skip = shlex.quote(str(offset))
+    count = shlex.quote(str(length))
+    dd = f"dd ibs=1 skip={skip} count={count} status=none"
+    if codec:
+        # Offset/length apply to the decompressed stream, so slice inside the pipe.
+        return f"LC_ALL=C {CODEC_DECOMP[codec]} -- {qpath} | {dd} | base64 -w 0"
+    return f"LC_ALL=C dd if={qpath} ibs=1 skip={skip} count={count} status=none | base64 -w 0"
 
 
 def _read_bounded(pipe, cap: int) -> tuple[bytes, bool]:

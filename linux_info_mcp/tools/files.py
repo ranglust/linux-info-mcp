@@ -12,6 +12,7 @@ from ..ssh import (
     run_ssh,
 )
 from ..validate import (
+    validate_codec,
     validate_find_args,
     validate_grep_flags,
     validate_grep_pattern,
@@ -21,6 +22,7 @@ from ..validate import (
 )
 from . import ToolSpec
 from ._common import decode_text as _decode_text
+from ._common import validate_bool
 
 
 def handle_read_file(args: dict) -> dict:
@@ -31,7 +33,10 @@ def handle_read_file(args: dict) -> dict:
     if grep_pattern is not None:
         grep_pattern = validate_grep_pattern(grep_pattern)
     grep_flags = validate_grep_flags(grep_flags_in)
-    cmd = build_remote_cmd_read(path, grep_pattern, grep_flags)
+    codec = validate_codec(
+        args.get("codec"), validate_bool(args.get("decompress"), "decompress"), path
+    )
+    cmd = build_remote_cmd_read(path, grep_pattern, grep_flags, codec)
     res = run_ssh(host, cmd)
     return {
         "stdout": _decode_text(res.stdout),
@@ -70,7 +75,10 @@ def handle_read_binary(args: dict) -> dict:
     host = validate_host(args["host"])
     path = validate_path(args["path"])
     offset, length = validate_offset_length(args["offset"], args["length"], ssh_mod.max_bytes())
-    cmd = build_remote_cmd_binary(path, offset, length)
+    codec = validate_codec(
+        args.get("codec"), validate_bool(args.get("decompress"), "decompress"), path
+    )
+    cmd = build_remote_cmd_binary(path, offset, length, codec)
     res = run_ssh(host, cmd)
     raw = res.stdout
     stderr = res.stderr
@@ -98,6 +106,11 @@ READ_FILE_SCHEMA = {
         "path": {"type": "string"},
         "grep_pattern": {"type": ["string", "null"]},
         "grep_flags": {"type": ["array", "null"], "items": {"type": "string"}},
+        "decompress": {"type": ["boolean", "null"]},
+        "codec": {
+            "type": ["string", "null"],
+            "enum": ["gzip", "zstd", "xz", "bzip2", "lz4", None],
+        },
     },
     "required": ["host", "path"],
     "additionalProperties": False,
@@ -128,6 +141,11 @@ READ_BINARY_SCHEMA = {
         "path": {"type": "string"},
         "offset": {"type": "integer"},
         "length": {"type": "integer"},
+        "decompress": {"type": ["boolean", "null"]},
+        "codec": {
+            "type": ["string", "null"],
+            "enum": ["gzip", "zstd", "xz", "bzip2", "lz4", None],
+        },
     },
     "required": ["host", "path", "offset", "length"],
     "additionalProperties": False,
@@ -139,7 +157,9 @@ TOOLS: list[ToolSpec] = [
         name="read_file",
         description=(
             "Read a text file on a remote host via SSH, optionally filtered through grep. "
-            "Returns stdout, stderr, exit_code, truncated."
+            "Set decompress=true to auto-detect a compression codec from the path extension "
+            "(gz/zst/xz/bz2/lz4), or pass codec= to override; grep then runs on the "
+            "decompressed text. Returns stdout, stderr, exit_code, truncated."
         ),
         input_schema=READ_FILE_SCHEMA,
         handler=handle_read_file,
@@ -157,6 +177,8 @@ TOOLS: list[ToolSpec] = [
         name="read_binary",
         description=(
             "Read a byte range of a remote file via SSH. "
+            "Set decompress=true (or pass codec=) to decompress first; offset/length then "
+            "apply to the decompressed stream. "
             "Returns base64-encoded data plus bytes_read, stderr, exit_code, truncated."
         ),
         input_schema=READ_BINARY_SCHEMA,

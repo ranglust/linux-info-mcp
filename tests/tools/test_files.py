@@ -138,6 +138,71 @@ def test_read_binary_corrupt_stream_signals_failure(monkeypatch):
     assert "[base64 decode failed]" in out["stderr"]
 
 
+def test_read_file_decompress_autodetect(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"log\n", b"", 0, False))
+    out = mod.handle_read_file({"host": "h1", "path": "/var/log/syslog.1.gz", "decompress": True})
+    assert out["stdout"] == "log\n"
+    assert captured["cmd"] == "LC_ALL=C gzip -dc -- /var/log/syslog.1.gz"
+
+
+def test_read_file_decompress_zstd_with_grep(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"err\n", b"", 0, False))
+    mod.handle_read_file(
+        {
+            "host": "h1",
+            "path": "/a/b.zst",
+            "decompress": True,
+            "grep_pattern": "err",
+            "grep_flags": ["-i"],
+        }
+    )
+    assert captured["cmd"] == "LC_ALL=C zstd -dc -- /a/b.zst | grep -i -e err --"
+
+
+def test_read_file_codec_override(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_read_file({"host": "h1", "path": "/data.log", "codec": "xz"})
+    assert captured["cmd"] == "LC_ALL=C xz -dc -- /data.log"
+
+
+def test_read_file_no_decompress_by_default(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_read_file({"host": "h1", "path": "/a/b.gz"})
+    assert captured["cmd"] == "LC_ALL=C cat -- /a/b.gz"
+
+
+def test_read_file_decompress_unknown_ext_rejected(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_read_file({"host": "h1", "path": "/a/b.log", "decompress": True})
+
+
+def test_read_file_bad_codec_rejected(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_read_file({"host": "h1", "path": "/a/b.gz", "codec": "gzip; rm -rf /"})
+
+
+def test_read_binary_decompress(monkeypatch):
+    payload = b"decompressed"
+    captured = _stub(monkeypatch, SshResult(base64.b64encode(payload), b"", 0, False))
+    out = mod.handle_read_binary(
+        {"host": "h1", "path": "/a/b.zst", "offset": 0, "length": 12, "decompress": True}
+    )
+    assert base64.b64decode(out["data_base64"]) == payload
+    assert captured["cmd"] == (
+        "LC_ALL=C zstd -dc -- /a/b.zst | dd ibs=1 skip=0 count=12 status=none | base64 -w 0"
+    )
+
+
+def test_read_binary_no_codec_uses_dd_if(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(base64.b64encode(b"abc"), b"", 0, False))
+    mod.handle_read_binary({"host": "h1", "path": "/bin/ls", "offset": 0, "length": 3})
+    assert (
+        captured["cmd"] == "LC_ALL=C dd if=/bin/ls ibs=1 skip=0 count=3 status=none | base64 -w 0"
+    )
+
+
 def test_read_file_truncation_propagates(monkeypatch):
     _stub(
         monkeypatch,
