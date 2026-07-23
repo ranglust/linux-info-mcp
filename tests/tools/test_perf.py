@@ -452,7 +452,7 @@ def test_meminfo_default_builder():
 
 def test_meminfo_fields_builder():
     cmd = mod.build_remote_cmd_meminfo(fields=["MemFree", "Committed_AS"])
-    assert cmd == "LC_ALL=C cat /proc/meminfo | grep -E '^(MemFree|Committed_AS):'"
+    assert cmd == "LC_ALL=C cat /proc/meminfo | grep -E '^(MemFree|Committed_AS):' || [ $? -eq 1 ]"
 
 
 def test_meminfo_handler_default(monkeypatch):
@@ -465,7 +465,9 @@ def test_meminfo_handler_default(monkeypatch):
 def test_meminfo_handler_fields(monkeypatch):
     captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
     mod.handle_meminfo({"host": "h1", "fields": ["Slab", "Dirty"]})
-    assert captured["cmd"] == "LC_ALL=C cat /proc/meminfo | grep -E '^(Slab|Dirty):'"
+    assert (
+        captured["cmd"] == "LC_ALL=C cat /proc/meminfo | grep -E '^(Slab|Dirty):' || [ $? -eq 1 ]"
+    )
 
 
 def test_meminfo_rejects_field_injection(monkeypatch):

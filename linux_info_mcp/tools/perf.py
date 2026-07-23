@@ -591,7 +591,7 @@ def build_remote_cmd_meminfo(*, fields: list[str] | None = None) -> str:
     if not fields:
         return base
     pattern = "^(" + "|".join(fields) + "):"
-    return f"{base} | grep -E {shlex.quote(pattern)}"
+    return f"{base} | grep -E {shlex.quote(pattern)} || [ $? -eq 1 ]"
 
 
 def handle_meminfo(args: dict) -> dict:

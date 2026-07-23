@@ -104,7 +104,7 @@ def build_remote_cmd_read(
     flags = " ".join(shlex.quote(f) for f in (grep_flags or []))
     qpat = shlex.quote(grep_pattern)
     flags_part = (flags + " ") if flags else ""
-    return f"{src} | grep {flags_part}-e {qpat} --"
+    return f"{src} | grep {flags_part}-e {qpat} -- || [ $? -eq 1 ]"
 
 
 def build_remote_cmd_find(path: str, predicates: dict) -> str:

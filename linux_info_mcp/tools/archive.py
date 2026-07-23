@@ -60,7 +60,7 @@ def build_remote_cmd_archive_read(
         return src
     flags = " ".join(shlex.quote(f) for f in (grep_flags or []))
     flags_part = (flags + " ") if flags else ""
-    return f"{src} | grep {flags_part}-e {shlex.quote(grep_pattern)} --"
+    return f"{src} | grep {flags_part}-e {shlex.quote(grep_pattern)} -- || [ $? -eq 1 ]"
 
 
 def handle_archive_list(args: dict) -> dict:

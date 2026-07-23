@@ -66,7 +66,7 @@ Parsing is **optional per tool** (`ToolSpec.parser`). When `output_mode` is non-
 - Codec resolution: explicit `codec` wins (whitelist membership; else `validation_error`); else if `decompress` is true, infer from the path's last extension (`gz`/`z`→gzip, `zst`→zstd, `xz`→xz, `bz2`→bzip2, `lz4`→lz4), rejecting an unrecognized extension; else no decompression.
 - Source is `cat -- <path>` (no codec) or `<codec-cmd> -dc -- <path>` (e.g. `gzip -dc -- <path>`). The codec name selects a hard-coded command; it is never interpolated into the shell.
 - If `grep_pattern` is `None`: remote command is `<source>`.
-- Else: `<source> | grep <flags...> -e <pattern> --` — grep runs on the decompressed text.
+- Else: `<source> | grep <flags...> -e <pattern> -- || [ $? -eq 1 ]` — grep runs on the decompressed text. The `|| [ $? -eq 1 ]` masks grep's no-match exit (1) so the pipeline returns 0 when nothing matches (real grep errors, exit 2+, still propagate). Without this, a legitimate no-match reads as a non-zero failure — harmless single-host, but the multi-host wrapper would count the host as failed.
 - `grep_pattern` is passed via `-e <pat>` so a pattern beginning with `-` is not interpreted as a flag.
 - Truncate stdout at `LINUX_INFO_MAX_BYTES`. If truncated, response includes `truncated: true`. This also caps decompression bombs.
 
@@ -695,7 +695,7 @@ Read `/proc/meminfo` on a remote host, optionally filtered to named fields. Read
 
 **Behavior**
 - No fields: `LC_ALL=C cat /proc/meminfo`.
-- With fields: `LC_ALL=C cat /proc/meminfo | grep -E <pattern>` where pattern is `^(Field1|Field2|...):`. Pattern is `shlex.quote`-escaped before interpolation.
+- With fields: `LC_ALL=C cat /proc/meminfo | grep -E <pattern> || [ $? -eq 1 ]` where pattern is `^(Field1|Field2|...):`. Pattern is `shlex.quote`-escaped before interpolation. The `|| [ $? -eq 1 ]` masks grep's no-match exit so a field filter matching nothing returns 0 instead of a false failure.
 
 **Returns** `{stdout, stderr, exit_code, truncated}`.
 
@@ -1239,7 +1239,7 @@ Read a single member from a tar-family or zip archive on a remote host. Read-onl
 
 **Behavior**
 - Extract-to-stdout source: tar → `LC_ALL=C tar -xO <comp> -f <path> -- <member>`; zip → `LC_ALL=C unzip -p <path> <member>`. `-O`/`-p` stream to stdout only (no filesystem write, so an in-archive `..` member cannot traverse).
-- Text mode (default): optional `| grep <flags...> -e <pattern> --`. Returns `{stdout, stderr, exit_code, truncated}`.
+- Text mode (default): optional `| grep <flags...> -e <pattern> -- || [ $? -eq 1 ]` (no-match masked to exit 0; real grep errors still propagate). Returns `{stdout, stderr, exit_code, truncated}`.
 - Binary mode: append `| base64 -w 0`; decode server-side and re-encode. Same base64-failure handling as `read_binary`. Returns `{data_base64, bytes_read, stderr, exit_code, truncated}`.
 
 **Returns** See above (mode-dependent).

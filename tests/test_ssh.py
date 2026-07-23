@@ -11,13 +11,13 @@ def test_build_read_no_grep():
 
 def test_build_read_with_grep():
     cmd = ssh_mod.build_remote_cmd_read("/var/log/syslog", "error", ["-i", "-n"])
-    assert cmd == "LC_ALL=C cat -- /var/log/syslog | grep -i -n -e error --"
+    assert cmd == "LC_ALL=C cat -- /var/log/syslog | grep -i -n -e error -- || [ $? -eq 1 ]"
 
 
 def test_build_read_grep_pattern_starting_with_dash():
     cmd = ssh_mod.build_remote_cmd_read("/etc/hosts", "-rf", ["-F"])
     assert "-e -rf --" in cmd
-    assert cmd.endswith("--")
+    assert cmd.endswith("-- || [ $? -eq 1 ]")
 
 
 def test_build_read_grep_pattern_with_shell_metachars():

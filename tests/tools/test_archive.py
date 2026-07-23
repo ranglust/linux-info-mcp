@@ -85,7 +85,10 @@ def test_archive_read_tar_member_grep(monkeypatch):
             "grep_flags": ["-n"],
         }
     )
-    assert captured["cmd"] == "LC_ALL=C tar -xO -f /t/x.tar -- log.txt | grep -n -e err --"
+    assert (
+        captured["cmd"]
+        == "LC_ALL=C tar -xO -f /t/x.tar -- log.txt | grep -n -e err -- || [ $? -eq 1 ]"
+    )
 
 
 def test_archive_read_zip_member(monkeypatch):

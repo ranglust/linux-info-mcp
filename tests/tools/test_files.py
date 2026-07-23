@@ -35,6 +35,27 @@ def test_read_file_happy(monkeypatch):
     assert captured["cmd"] == "LC_ALL=C cat -- /etc/hosts"
 
 
+def _sh_exit(cmd):
+    import subprocess
+
+    return subprocess.run(["sh", "-c", cmd], capture_output=True).returncode
+
+
+def test_read_file_grep_no_match_masks_exit_1(tmp_path):
+    from linux_info_mcp.ssh import build_remote_cmd_read
+
+    f = tmp_path / "log.txt"
+    f.write_text("alpha\nbeta\n")
+    # raw grep no-match exits 1 (baseline)
+    assert _sh_exit(f"cat -- {f} | grep -e zzz --") == 1
+    # builder masks no-match to 0
+    assert _sh_exit(build_remote_cmd_read(str(f), "zzz", [], None)) == 0
+    # match still 0
+    assert _sh_exit(build_remote_cmd_read(str(f), "alpha", [], None)) == 0
+    # real grep error (invalid regex -> exit 2) stays non-zero
+    assert _sh_exit(build_remote_cmd_read(str(f), "[", [], None)) != 0
+
+
 def test_read_file_with_grep(monkeypatch):
     captured = _stub(
         monkeypatch,
@@ -156,7 +177,7 @@ def test_read_file_decompress_zstd_with_grep(monkeypatch):
             "grep_flags": ["-i"],
         }
     )
-    assert captured["cmd"] == "LC_ALL=C zstd -dc -- /a/b.zst | grep -i -e err --"
+    assert captured["cmd"] == "LC_ALL=C zstd -dc -- /a/b.zst | grep -i -e err -- || [ $? -eq 1 ]"
 
 
 def test_read_file_codec_override(monkeypatch):
