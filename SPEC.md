@@ -1388,11 +1388,12 @@ Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 from dataclasses import dataclass
 from typing import Callable
 
+
 @dataclass(frozen=True)
 class ToolSpec:
     name: str
     description: str
-    input_schema: dict           # JSON Schema for MCP inputSchema
+    input_schema: dict  # JSON Schema for MCP inputSchema
     handler: Callable[[dict], dict]  # validates args, builds remote cmd, runs ssh, returns dict
 ```
 

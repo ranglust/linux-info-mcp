@@ -50,9 +50,7 @@ def validate_output_mode(value: object) -> str:
         raise ValueError("output_mode must be a non-empty string")
     normalized = value.strip().lower()
     if normalized not in OUTPUT_MODES:
-        raise ValueError(
-            f"output_mode {value!r} invalid; must be one of: {sorted(OUTPUT_MODES)}"
-        )
+        raise ValueError(f"output_mode {value!r} invalid; must be one of: {sorted(OUTPUT_MODES)}")
     return normalized
 
 
@@ -60,10 +58,10 @@ def resolve_output_mode(args: dict) -> str:
     """Return effective output mode. Env overrides arg; both validated."""
     arg = args.get("output_mode") if isinstance(args, dict) else None
     if arg is not None:
-        validate_output_mode(arg)          # always validate — reject junk even if env wins
+        validate_output_mode(arg)  # always validate — reject junk even if env wins
     env = os.environ.get("LINUX_INFO_OUTPUT_MODE", "").strip()
     if env:
-        return validate_output_mode(env)   # env override — raises on bad value
+        return validate_output_mode(env)  # env override — raises on bad value
     if arg is not None:
         return arg.strip().lower()
     return "raw"
@@ -103,17 +101,19 @@ def parse_df(stdout: str) -> list[dict]:
         raise ValueError(f"unexpected df header: {lines[0]!r}")
     out = []
     for line in lines[1:]:
-        parts = line.split(maxsplit=5)   # mount may contain spaces
+        parts = line.split(maxsplit=5)  # mount may contain spaces
         if len(parts) < 6:
             continue
-        out.append({
-            "fs": parts[0],
-            "blocks_1k": int(parts[1]),
-            "used_1k": int(parts[2]),
-            "avail_1k": int(parts[3]),
-            "use_pct": int(parts[4].rstrip("%")),
-            "mount": parts[5].strip(),
-        })
+        out.append(
+            {
+                "fs": parts[0],
+                "blocks_1k": int(parts[1]),
+                "used_1k": int(parts[2]),
+                "avail_1k": int(parts[3]),
+                "use_pct": int(parts[4].rstrip("%")),
+                "mount": parts[5].strip(),
+            }
+        )
     return out
 
 
@@ -133,20 +133,29 @@ def parse_free(stdout: str) -> dict:
             if len(vals) >= 7:
                 # wide mode (-w): total used free shared buffers cache available
                 rows["mem"] = {
-                    "total": int(vals[0]), "used": int(vals[1]), "free": int(vals[2]),
-                    "shared": int(vals[3]), "buffers": int(vals[4]),
-                    "cache": int(vals[5]), "available": int(vals[6]),
+                    "total": int(vals[0]),
+                    "used": int(vals[1]),
+                    "free": int(vals[2]),
+                    "shared": int(vals[3]),
+                    "buffers": int(vals[4]),
+                    "cache": int(vals[5]),
+                    "available": int(vals[6]),
                 }
             elif len(vals) >= 6:
                 # standard: total used free shared buff/cache available
                 rows["mem"] = {
-                    "total": int(vals[0]), "used": int(vals[1]), "free": int(vals[2]),
-                    "shared": int(vals[3]), "buff_cache": int(vals[4]),
+                    "total": int(vals[0]),
+                    "used": int(vals[1]),
+                    "free": int(vals[2]),
+                    "shared": int(vals[3]),
+                    "buff_cache": int(vals[4]),
                     "available": int(vals[5]),
                 }
         elif label == "swap" and len(vals) >= 3:
             rows["swap"] = {
-                "total": int(vals[0]), "used": int(vals[1]), "free": int(vals[2]),
+                "total": int(vals[0]),
+                "used": int(vals[1]),
+                "free": int(vals[2]),
             }
     return rows
 ```

@@ -234,6 +234,7 @@ SLABTOP_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="slabtop",
         description=(
@@ -243,6 +244,7 @@ Add to `TOOLS`:
         input_schema=SLABTOP_SCHEMA,
         handler=handle_slabtop,
     ),
+)
 ```
 
 **Step 4: Run to verify pass** — `... -k slabtop` → PASS.
@@ -372,6 +374,7 @@ NUMASTAT_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="numastat",
         description=(
@@ -382,6 +385,7 @@ Add to `TOOLS`:
         input_schema=NUMASTAT_SCHEMA,
         handler=handle_numastat,
     ),
+)
 ```
 
 **Step 4: Run to verify pass** — `... -k numastat` → PASS.
@@ -590,6 +594,7 @@ Note: `shlex.quote("user.slice")` returns `user.slice` unquoted (no metachars), 
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="cgroup_stats",
         description=(
@@ -600,6 +605,7 @@ Add to `TOOLS`:
         input_schema=CGROUP_STATS_SCHEMA,
         handler=handle_cgroup_stats,
     ),
+)
 ```
 
 **Step 4: Run to verify pass** — `... -k cgroup_stats` → PASS.
@@ -749,6 +755,7 @@ SYSTEMD_ANALYZE_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="systemd_analyze",
         description=(
@@ -758,6 +765,7 @@ Add to `TOOLS`:
         input_schema=SYSTEMD_ANALYZE_SCHEMA,
         handler=handle_systemd_analyze,
     ),
+)
 ```
 
 Update the registry-names test at the bottom of `test_kernel.py` to expect the four kernel additions appended after the existing `["dmesg", "uname", "sysctl"]`:
@@ -867,6 +875,7 @@ BLOCKDEV_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="blockdev",
         description=(
@@ -876,6 +885,7 @@ Add to `TOOLS`:
         input_schema=BLOCKDEV_SCHEMA,
         handler=handle_blockdev,
     ),
+)
 ```
 
 Update the registry-names test at the bottom of `test_disk.py` to expect `blockdev` appended after `["du", "lsblk", "blkid", "smartctl"]`.

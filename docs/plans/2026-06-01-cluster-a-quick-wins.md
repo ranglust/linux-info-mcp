@@ -153,6 +153,7 @@ Note: `resource` is whitelist-bound to `{cpu, memory, io}` before f-string inter
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="psi_stats",
         description=(
@@ -163,6 +164,7 @@ Add to `TOOLS`:
         input_schema=PSI_STATS_SCHEMA,
         handler=handle_psi_stats,
     ),
+)
 ```
 
 **Step 4: Run tests to verify pass**
@@ -317,6 +319,7 @@ MEMINFO_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="meminfo",
         description=(
@@ -326,6 +329,7 @@ Add to `TOOLS`:
         input_schema=MEMINFO_SCHEMA,
         handler=handle_meminfo,
     ),
+)
 ```
 
 **Step 4: Run to verify pass**
@@ -464,6 +468,7 @@ PROC_LIMITS_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="proc_limits",
         description=(
@@ -473,6 +478,7 @@ Add to `TOOLS`:
         input_schema=PROC_LIMITS_SCHEMA,
         handler=handle_proc_limits,
     ),
+)
 ```
 
 `validate_pid` is already imported in `proc.py`.
@@ -632,6 +638,7 @@ ARP_TABLE_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="arp_table",
         description=(
@@ -641,6 +648,7 @@ Add to `TOOLS`:
         input_schema=ARP_TABLE_SCHEMA,
         handler=handle_arp_table,
     ),
+)
 ```
 
 Update the registry-names test at the bottom of `test_net.py` to expect `arp_table` appended:
@@ -776,6 +784,7 @@ SYSTEMCTL_LIST_TIMERS_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="systemctl_list_timers",
         description=(
@@ -785,6 +794,7 @@ Add to `TOOLS`:
         input_schema=SYSTEMCTL_LIST_TIMERS_SCHEMA,
         handler=handle_systemctl_list_timers,
     ),
+)
 ```
 
 **Step 4: Run to verify pass**
@@ -908,6 +918,7 @@ SYSTEMCTL_LIST_SOCKETS_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="systemctl_list_sockets",
         description=(
@@ -917,6 +928,7 @@ Add to `TOOLS`:
         input_schema=SYSTEMCTL_LIST_SOCKETS_SCHEMA,
         handler=handle_systemctl_list_sockets,
     ),
+)
 ```
 
 **Step 4: Run to verify pass**

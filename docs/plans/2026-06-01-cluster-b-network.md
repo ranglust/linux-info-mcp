@@ -114,6 +114,7 @@ TC_QDISC_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="tc_qdisc",
         description=(
@@ -123,6 +124,7 @@ Add to `TOOLS`:
         input_schema=TC_QDISC_SCHEMA,
         handler=handle_tc_qdisc,
     ),
+)
 ```
 
 **Step 4: Run to verify pass** — `uv run pytest tests/tools/test_net.py -q -k tc_qdisc` → PASS.
@@ -272,6 +274,7 @@ ETHTOOL_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="ethtool",
         description=(
@@ -282,6 +285,7 @@ Add to `TOOLS`:
         input_schema=ETHTOOL_SCHEMA,
         handler=handle_ethtool,
     ),
+)
 ```
 
 **Step 4: Run to verify pass** — `uv run pytest tests/tools/test_net.py -q -k ethtool` → PASS.
@@ -429,6 +433,7 @@ CONNTRACK_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="conntrack",
         description=(
@@ -439,6 +444,7 @@ Add to `TOOLS`:
         input_schema=CONNTRACK_SCHEMA,
         handler=handle_conntrack,
     ),
+)
 ```
 
 **Step 4: Run to verify pass** — `... -k conntrack` → PASS.
@@ -471,9 +477,15 @@ def test_net_protocol_stats_default_builder():
 
 
 def test_net_protocol_stats_flag_builders():
-    assert mod.build_remote_cmd_net_protocol_stats(proto_flag="--tcp") == "LC_ALL=C netstat -s --tcp"
-    assert mod.build_remote_cmd_net_protocol_stats(proto_flag="--udp") == "LC_ALL=C netstat -s --udp"
-    assert mod.build_remote_cmd_net_protocol_stats(proto_flag="--raw") == "LC_ALL=C netstat -s --raw"
+    assert (
+        mod.build_remote_cmd_net_protocol_stats(proto_flag="--tcp") == "LC_ALL=C netstat -s --tcp"
+    )
+    assert (
+        mod.build_remote_cmd_net_protocol_stats(proto_flag="--udp") == "LC_ALL=C netstat -s --udp"
+    )
+    assert (
+        mod.build_remote_cmd_net_protocol_stats(proto_flag="--raw") == "LC_ALL=C netstat -s --raw"
+    )
 
 
 def test_net_protocol_stats_handler_default(monkeypatch):
@@ -563,6 +575,7 @@ NET_PROTOCOL_STATS_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="net_protocol_stats",
         description=(
@@ -573,6 +586,7 @@ Add to `TOOLS`:
         input_schema=NET_PROTOCOL_STATS_SCHEMA,
         handler=handle_net_protocol_stats,
     ),
+)
 ```
 
 **Step 4: Run to verify pass** — `... -k net_protocol_stats` → PASS.
@@ -729,6 +743,7 @@ NFT_LIST_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="nft_list",
         description=(
@@ -739,6 +754,7 @@ Add to `TOOLS`:
         input_schema=NFT_LIST_SCHEMA,
         handler=handle_nft_list,
     ),
+)
 ```
 
 **Step 4: Run to verify pass** — `... -k nft_list` → PASS.
@@ -886,6 +902,7 @@ IPTABLES_LIST_SCHEMA = {
 Add to `TOOLS`:
 
 ```python
+(
     ToolSpec(
         name="iptables_list",
         description=(
@@ -895,6 +912,7 @@ Add to `TOOLS`:
         input_schema=IPTABLES_LIST_SCHEMA,
         handler=handle_iptables_list,
     ),
+)
 ```
 
 Update the registry-names test at the bottom of `test_net.py` to include all Cluster A+B net tools in order:

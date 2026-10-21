@@ -243,7 +243,7 @@ _SCRIPT = (
     "echo '===dmi_product==='; cat /sys/class/dmi/id/product_name 2>/dev/null || true; "
     "echo '===capabilities==='; "
     "for t in " + " ".join(_CAP_TOOLS) + "; do "
-    "if command -v \"$t\" >/dev/null 2>&1; then echo \"$t yes\"; else echo \"$t no\"; fi; "
+    'if command -v "$t" >/dev/null 2>&1; then echo "$t yes"; else echo "$t no"; fi; '
     "done; "
     "echo '===uptime==='; cat /proc/uptime 2>/dev/null || true; "
     "echo '===now_utc==='; date -u +%FT%TZ 2>/dev/null || true; "
