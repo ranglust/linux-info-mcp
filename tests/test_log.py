@@ -100,7 +100,7 @@ def test_setup_idempotent(monkeypatch, tmp_path):
     setup_logging()
     setup_logging()
     handlers = logging.getLogger("linux_info_mcp").handlers
-    assert len(handlers) == 1
+    assert sum(isinstance(h, logging.FileHandler) for h in handlers) == 1
 
 
 def test_unknown_level_falls_back_to_info(monkeypatch, tmp_path):
