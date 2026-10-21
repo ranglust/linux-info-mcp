@@ -3,7 +3,7 @@
 ![tests](https://github.com/ranglust/linux-info-mcp/actions/workflows/tests.yml/badge.svg)
 [![codecov](https://codecov.io/gh/ranglust/linux-info-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/ranglust/linux-info-mcp)
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. 75 tools across 17 modules:
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. 78 tools across 18 modules:
 
 - files: `read_file`, `find_files`, `read_binary`
 - archive: `archive_list`, `archive_read`
@@ -19,7 +19,7 @@ MCP server that runs read-only diagnostic commands on remote hosts via SSH. 75 t
 - pkg: `dpkg_list`, `rpm_list`, `apt_list_installed`, `reboot_required`
 - sys: `uptime`, `who`, `last`, `lscpu`, `lsmem`, `dmidecode`, `lspci`, `lsusb`, `sensors`
 - time: `chronyc`, `timedatectl`
-- fs: `mount`, `findmnt`, `stat_fs`
+- fs: `mount`, `findmnt`, `stat_fs`, `stat`
 - docker: `docker_ps`, `docker_inspect`, `docker_images`, `docker_logs`
 - facts: `host_facts`
 - triage: `triage`

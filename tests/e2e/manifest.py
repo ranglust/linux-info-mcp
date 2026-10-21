@@ -64,6 +64,11 @@ TOOL_ARGS: dict[str, list[dict]] = {
     "timedatectl": [{"mode": "status"}],
     # fs
     "stat_fs": [{"path": "/"}],
+    "stat": [
+        {"paths": ["/etc/passwd", "/"]},
+        {"paths": ["/etc/passwd"], "format": "%n %U:%G %a %A %s"},
+        {"paths": ["/"], "file_system": True, "terse": True},
+    ],
     # proc
     "proc_limits": [{"pid": 1}],
     # net: ethtool requires iface; eth0 is best-effort (error baseline on hosts

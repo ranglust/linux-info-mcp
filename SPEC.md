@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 75 tools across 17 modules (files, systemd, journalctl, perf, sampling, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 78 tools across 18 modules (files, archive, systemd, journalctl, perf, sampling, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -1244,6 +1244,21 @@ Read a single member from a tar-family or zip archive on a remote host. Read-onl
 
 **Returns** See above (mode-dependent).
 
+### 78. `stat`
+**Args**
+- `host: str` (required)
+- `paths: list[str]` (required, 1–100) — each a validated path, positional after `--`.
+- `dereference: bool | None` — `-L`.
+- `file_system: bool | None` — `-f` (filesystem status instead of file status).
+- `terse: bool | None` — `-t`. Mutually exclusive with `format`.
+- `format: str | None` — `--format=<fmt>` (equals-form, shell-quoted). Max 512 chars, NUL/newline rejected. Every `%` must parse as `%[flags][width][.precision]<spec>` (flags `-#0+ '`, width ≤3 digits) or `%%`, and `<spec>` must be in the per-mode whitelist. File mode: `a A b B C d D f F g G h i m n N o s t T u U w W x X y Y z Z r R Hd Ld Hr Lr`. File-system mode: `a b c d f i l n s S t T`. `--format` (not `--printf`), so backslash escapes are not interpreted.
+- `cached: str | None` — whitelist: `always`, `never`, `default`. → `--cached=<v>`.
+
+**Behavior**
+- Remote command: `stat [-L] [-f] [-t] [--format=<fmt>] [--cached=<v>] -- <path>...`. `stat_fs` (§40) stays as the narrow `stat -f` form.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
 ---
 
 ## Configuration (environment variables)
@@ -1330,7 +1345,7 @@ linux-info-mcp/
       pkg.py                 # dpkg_list, rpm_list, apt_list_installed, reboot_required
       sys.py                 # uptime, who, last, lscpu, lsmem, dmidecode, lspci, lsusb, sensors
       time.py                # chronyc, timedatectl
-      fs.py                  # mount, findmnt, stat_fs
+      fs.py                  # mount, findmnt, stat_fs, stat
       docker.py              # docker_ps, docker_inspect, docker_images, docker_logs
       facts.py               # host_facts
       triage.py              # triage
@@ -1365,7 +1380,7 @@ linux-info-mcp/
   SECURITY.md                # threat model + reporting
 ```
 
-75 tools across 17 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
+78 tools across 18 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 

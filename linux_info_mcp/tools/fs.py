@@ -1,4 +1,4 @@
-"""Filesystem mount inspection tools: mount, findmnt, stat_fs."""
+"""Filesystem inspection tools: mount, findmnt, stat_fs, stat."""
 
 from __future__ import annotations
 
@@ -14,6 +14,12 @@ from ._common import validate_bool as _bool
 _FSTYPE_RE = re.compile(r"^[a-z0-9]{1,32}$")
 _SOURCE_RE = re.compile(r"^[A-Za-z0-9./_:-]{1,256}$")
 _STAT_FS_FORMATS = {"default", "terse"}
+_STAT_CACHED = {"always", "never", "default"}
+_STAT_MAX_PATHS = 100
+_STAT_MAX_FORMAT = 512
+_STAT_FILE_SPECS = set("aAbBCdDfFgGhimnNostTuUwWxXyYzZrR") | {"Hd", "Ld", "Hr", "Lr"}
+_STAT_FS_SPECS = set("abcdfilnsStT")
+_STAT_SPEC_RE = re.compile(r"%(%|[-#0+ ']*[0-9]{0,3}(?:\.[0-9]{0,9})?(Hd|Ld|Hr|Lr|[A-Za-z]))")
 
 
 def _validate_fstype(value) -> str:
@@ -218,6 +224,120 @@ STAT_FS_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
+# stat
+# ---------------------------------------------------------------------------
+
+
+def _validate_stat_format(value, *, file_system: bool) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError("format must be a non-empty string")
+    if len(value) > _STAT_MAX_FORMAT:
+        raise ValueError(f"format must be at most {_STAT_MAX_FORMAT} characters")
+    reject_unsafe_chars(value, "format")
+    allowed = _STAT_FS_SPECS if file_system else _STAT_FILE_SPECS
+    pos = 0
+    while (i := value.find("%", pos)) != -1:
+        m = _STAT_SPEC_RE.match(value, i)
+        if not m:
+            raise ValueError(f"format has invalid directive at offset {i}")
+        spec = m.group(2)
+        if spec is not None and spec not in allowed:
+            mode = "file-system" if file_system else "file"
+            raise ValueError(f"format directive %{spec} not allowed in {mode} mode")
+        pos = m.end()
+    return value
+
+
+def _validate_stat_paths(value) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise ValueError("paths must be a non-empty list")
+    if len(value) > _STAT_MAX_PATHS:
+        raise ValueError(f"paths must have at most {_STAT_MAX_PATHS} entries")
+    return [validate_path(p, label="paths entry") for p in value]
+
+
+def build_remote_cmd_stat(
+    *,
+    paths: list[str],
+    dereference: bool = False,
+    file_system: bool = False,
+    terse: bool = False,
+    format: str | None = None,
+    cached: str | None = None,
+) -> str:
+    """Build LC_ALL=C stat command string."""
+    if terse and format is not None:
+        raise ValueError("terse and format are mutually exclusive")
+    if cached is not None and cached not in _STAT_CACHED:
+        raise ValueError(f"cached must be one of {sorted(_STAT_CACHED)}")
+    parts = ["LC_ALL=C", "stat"]
+    if dereference:
+        parts.append("-L")
+    if file_system:
+        parts.append("-f")
+    if terse:
+        parts.append("-t")
+    if format is not None:
+        parts.append(f"--format={shlex.quote(format)}")
+    if cached is not None:
+        parts.append(f"--cached={cached}")
+    parts.append("--")
+    parts += [shlex.quote(p) for p in paths]
+    return " ".join(parts)
+
+
+def handle_stat(args: dict) -> dict:
+    host = validate_host(args["host"])
+    if args.get("paths") is None:
+        raise ValueError("paths is required")
+    paths = _validate_stat_paths(args["paths"])
+    file_system = _bool(args.get("file_system"), "file_system")
+    fmt = args.get("format")
+    if fmt is not None:
+        fmt = _validate_stat_format(fmt, file_system=file_system)
+    cached = args.get("cached")
+    if cached is not None and (not isinstance(cached, str) or cached not in _STAT_CACHED):
+        raise ValueError(f"cached must be one of {sorted(_STAT_CACHED)}")
+    cmd = build_remote_cmd_stat(
+        paths=paths,
+        dereference=_bool(args.get("dereference"), "dereference"),
+        file_system=file_system,
+        terse=_bool(args.get("terse"), "terse"),
+        format=fmt,
+        cached=cached,
+    )
+    res = run_ssh(host, cmd)
+    return {
+        "stdout": _decode_text(res.stdout),
+        "stderr": _decode_text(res.stderr),
+        "exit_code": res.exit_code,
+        "truncated": res.truncated,
+        "stderr_truncated": res.stderr_truncated,
+    }
+
+
+STAT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "host": {"type": "string"},
+        "paths": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "maxItems": _STAT_MAX_PATHS,
+        },
+        "dereference": {"type": ["boolean", "null"]},
+        "file_system": {"type": ["boolean", "null"]},
+        "terse": {"type": ["boolean", "null"]},
+        "format": {"type": ["string", "null"]},
+        "cached": {"type": ["string", "null"], "enum": ["always", "never", "default", None]},
+    },
+    "required": ["host", "paths"],
+    "additionalProperties": False,
+}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -248,5 +368,17 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=STAT_FS_SCHEMA,
         handler=handle_stat_fs,
+    ),
+    ToolSpec(
+        name="stat",
+        description=(
+            "Run stat on one or more paths on a remote host: mode, owner, size, "
+            "inode, links, timestamps, SELinux context. Options: dereference (-L), "
+            "file_system (-f), terse (-t), format (-c, e.g. '%n %U:%G %a %A'; "
+            "printf-style directives validated per mode), cached (--cached). "
+            "Returns stdout, stderr, exit_code, truncated."
+        ),
+        input_schema=STAT_SCHEMA,
+        handler=handle_stat,
     ),
 ]

@@ -339,6 +339,169 @@ def test_stat_fs_truncated_propagates(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# stat
+# ---------------------------------------------------------------------------
+
+
+def test_stat_default_builder():
+    assert mod.build_remote_cmd_stat(paths=["/etc"]) == "LC_ALL=C stat -- /etc"
+
+
+def test_stat_all_flags_builder():
+    cmd = mod.build_remote_cmd_stat(
+        paths=["/a", "/b c"],
+        dereference=True,
+        file_system=True,
+        cached="never",
+    )
+    assert cmd == "LC_ALL=C stat -L -f --cached=never -- /a '/b c'"
+
+
+def test_stat_terse_builder():
+    assert mod.build_remote_cmd_stat(paths=["/x"], terse=True) == "LC_ALL=C stat -t -- /x"
+
+
+def test_stat_format_builder_quotes():
+    cmd = mod.build_remote_cmd_stat(paths=["/x"], format="%n %U:%G %a")
+    assert cmd == "LC_ALL=C stat --format='%n %U:%G %a' -- /x"
+
+
+def test_stat_builder_terse_format_exclusive():
+    with pytest.raises(ValueError):
+        mod.build_remote_cmd_stat(paths=["/x"], terse=True, format="%n")
+
+
+def test_stat_builder_rejects_bad_cached():
+    with pytest.raises(ValueError):
+        mod.build_remote_cmd_stat(paths=["/x"], cached="sometimes")
+
+
+def test_stat_handler_happy(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"out\n", b"", 0, False))
+    out = mod.handle_stat({"host": "h1", "paths": ["/etc/passwd"]})
+    assert out == {
+        "stdout": "out\n",
+        "stderr": "",
+        "exit_code": 0,
+        "truncated": False,
+        "stderr_truncated": False,
+    }
+    assert captured["cmd"] == "LC_ALL=C stat -- /etc/passwd"
+
+
+def test_stat_handler_format_perms(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_stat({"host": "h1", "paths": ["/k.pem"], "format": "%U %G %a %A"})
+    assert captured["cmd"] == "LC_ALL=C stat --format='%U %G %a %A' -- /k.pem"
+
+
+@pytest.mark.parametrize(
+    "fmt",
+    ["%n", "%%", "100%% %s", "%-10n|%5s", "%.3Y", "%Hd:%Ld %Hr %Lr", "%C", "%W %w", "plain"],
+)
+def test_stat_handler_accepts_file_formats(monkeypatch, fmt):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_stat({"host": "h1", "paths": ["/"], "format": fmt})
+
+
+@pytest.mark.parametrize("fmt", ["%n %c %S %l %T", "%a %b %d %f %i %s %t"])
+def test_stat_handler_accepts_fs_formats(monkeypatch, fmt):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_stat({"host": "h1", "paths": ["/"], "format": fmt, "file_system": True})
+
+
+@pytest.mark.parametrize(
+    "fmt",
+    ["%", "abc%", "%q", "%H", "%Lx", "%1234n", "%n\n", "%n\x00", "", "%" + "n" * 600],
+)
+def test_stat_handler_rejects_bad_file_formats(monkeypatch, fmt):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_stat({"host": "h1", "paths": ["/"], "format": fmt})
+
+
+@pytest.mark.parametrize("fmt", ["%U", "%A", "%y", "%Hd"])
+def test_stat_handler_rejects_file_directives_in_fs_mode(monkeypatch, fmt):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_stat({"host": "h1", "paths": ["/"], "format": fmt, "file_system": True})
+
+
+def test_stat_handler_format_injection_is_quoted(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_stat({"host": "h1", "paths": ["/"], "format": "%n'; rm -rf / #"})
+    assert captured["cmd"] == "LC_ALL=C stat --format='%n'\"'\"'; rm -rf / #' -- /"
+
+
+def test_stat_handler_format_dollar_not_expanded(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_stat({"host": "h1", "paths": ["/"], "format": "$(id) %n"})
+    assert captured["cmd"] == "LC_ALL=C stat --format='$(id) %n' -- /"
+
+
+def test_stat_handler_terse_and_format_rejected(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_stat({"host": "h1", "paths": ["/"], "terse": True, "format": "%n"})
+
+
+@pytest.mark.parametrize(
+    "paths",
+    [None, [], "/etc", ["-L"], ["/ok", "-oProxyCommand=evil"], ["/a\n/b"], ["/a\x00"], [""], [1]],
+)
+def test_stat_handler_rejects_bad_paths(monkeypatch, paths):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    args = {"host": "h1"}
+    if paths is not None:
+        args["paths"] = paths
+    with pytest.raises(ValueError):
+        mod.handle_stat(args)
+
+
+def test_stat_handler_rejects_too_many_paths(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_stat({"host": "h1", "paths": [f"/p{i}" for i in range(101)]})
+
+
+def test_stat_handler_path_injection_is_quoted(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_stat({"host": "h1", "paths": ["/a; rm -rf /", "/b"]})
+    assert captured["cmd"] == "LC_ALL=C stat -- '/a; rm -rf /' /b"
+
+
+@pytest.mark.parametrize("key", ["dereference", "file_system", "terse"])
+def test_stat_handler_rejects_non_bool(monkeypatch, key):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_stat({"host": "h1", "paths": ["/"], key: "yes"})
+
+
+@pytest.mark.parametrize("cached", ["sometimes", "", 1, "--evil"])
+def test_stat_handler_rejects_bad_cached(monkeypatch, cached):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_stat({"host": "h1", "paths": ["/"], "cached": cached})
+
+
+def test_stat_truncated_propagates(monkeypatch):
+    _stub(monkeypatch, SshResult(b"x", b"", 0, True))
+    out = mod.handle_stat({"host": "h1", "paths": ["/"]})
+    assert out["truncated"] is True
+
+
+def test_stat_rejects_bad_host(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_stat({"host": "-oProxyCommand=evil", "paths": ["/"]})
+
+
+def test_stat_schema_requires_paths():
+    spec = next(t for t in mod.TOOLS if t.name == "stat")
+    assert spec.input_schema["required"] == ["host", "paths"]
+
+
+# ---------------------------------------------------------------------------
 # host validation propagation
 # ---------------------------------------------------------------------------
 
@@ -368,7 +531,7 @@ def test_stat_fs_rejects_bad_host(monkeypatch):
 
 def test_tools_registry_names():
     names = [t.name for t in mod.TOOLS]
-    assert names == ["mount", "findmnt", "stat_fs"]
+    assert names == ["mount", "findmnt", "stat_fs", "stat"]
     for spec in mod.TOOLS:
         assert callable(spec.handler)
         assert "host" in spec.input_schema["required"]
