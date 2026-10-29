@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 
@@ -44,6 +45,64 @@ def _ssh_argv() -> list[str]:
 
 def _timeout() -> float:
     return float(os.environ.get("LINUX_INFO_TIMEOUT", "30"))
+
+
+def _warmup_enabled() -> bool:
+    return os.environ.get("LINUX_INFO_SSH_WARMUP", "").strip().lower() not in _MUX_OFF
+
+
+def _warm_ttl() -> float:
+    try:
+        return max(0.0, float(os.environ.get("LINUX_INFO_SSH_WARM_TTL", "60")))
+    except ValueError:
+        return 60.0
+
+
+# Cold-start gate: while no outgoing connection has succeeded within the warm TTL,
+# only one connection (the leader) runs; concurrent callers wait so they can reuse
+# whatever the leader cached (interactive login, agent unlock, mux master).
+_gate = threading.Condition()
+_gate_leader = False
+_gate_last_ok: float | None = None
+
+
+def _gate_is_warm(now: float) -> bool:
+    return _gate_last_ok is not None and now - _gate_last_ok < _warm_ttl()
+
+
+def _gate_enter(deadline: float) -> bool:
+    """Block until warm, leadership, or deadline. Returns True if caller is the leader."""
+    global _gate_leader
+    if not _warmup_enabled():
+        return False
+    with _gate:
+        while True:
+            now = time.monotonic()
+            if _gate_is_warm(now):
+                return False
+            if not _gate_leader:
+                _gate_leader = True
+                return True
+            if now >= deadline:
+                return False  # waited a full timeout; fall back to running in parallel
+            _gate.wait(deadline - now)
+
+
+def _gate_exit(leader: bool, connected: bool) -> None:
+    global _gate_leader, _gate_last_ok
+    with _gate:
+        _gate_last_ok = time.monotonic() if connected else None
+        if leader:
+            _gate_leader = False
+        _gate.notify_all()
+
+
+def reset_gate_for_tests() -> None:
+    global _gate_leader, _gate_last_ok
+    with _gate:
+        _gate_leader = False
+        _gate_last_ok = None
+        _gate.notify_all()
 
 
 def max_bytes() -> int:
@@ -163,6 +222,44 @@ def run_ssh(host: str, remote_cmd: str) -> SshResult:
         "ssh_call_start",
         extra={"host": host, "remote_cmd": remote_cmd},
     )
+    g0 = time.perf_counter()
+    leader = _gate_enter(time.monotonic() + _timeout())
+    gate_wait_ms = (time.perf_counter() - g0) * 1000.0
+    connected = False
+    try:
+        result, timed_out = _run_proc(argv, cap)
+        # 255 = ssh's own connection/auth failure; anything else means the remote ran.
+        connected = not timed_out and result.exit_code != 255
+    finally:
+        _gate_exit(leader, connected)
+    outcome = "timeout" if timed_out else ("ok" if result.exit_code == 0 else "nonzero")
+    _log.info(
+        "ssh_call",
+        extra={
+            "host": host,
+            "exit_code": result.exit_code,
+            "duration_ms": round(result.duration_ms, 3),
+            "gate_wait_ms": round(gate_wait_ms, 3),
+            "gate_leader": leader,
+            "stdout_bytes": len(result.stdout),
+            "stderr_bytes": len(result.stderr),
+            "truncated": result.truncated,
+            "stderr_truncated": result.stderr_truncated,
+            "outcome": outcome,
+        },
+    )
+    _log.trace(  # type: ignore[attr-defined]
+        "ssh_call_io",
+        extra={
+            "host": host,
+            "stdout": result.stdout.decode("utf-8", errors="replace"),
+            "stderr": result.stderr.decode("utf-8", errors="replace"),
+        },
+    )
+    return result
+
+
+def _run_proc(argv: list[str], cap: int) -> tuple[SshResult, bool]:
     t0 = time.perf_counter()
     proc = subprocess.Popen(
         argv,
@@ -172,8 +269,6 @@ def run_ssh(host: str, remote_cmd: str) -> SshResult:
     )
     timed_out = False
     try:
-        import threading
-
         out_box: dict[str, tuple[bytes, bool]] = {}
         err_box: dict[str, tuple[bytes, bool]] = {}
 
@@ -208,14 +303,12 @@ def run_ssh(host: str, remote_cmd: str) -> SshResult:
     duration_ms = (time.perf_counter() - t0) * 1000.0
     if timed_out:
         exit_code = 124
-        outcome = "timeout"
         stderr = stderr + b"\n[timeout]"
         if len(stderr) > cap:
             stderr = stderr[:cap]
             stderr_over = True
     else:
         exit_code = proc.returncode
-        outcome = "ok" if exit_code == 0 else "nonzero"
 
     result = SshResult(
         stdout=stdout,
@@ -225,25 +318,4 @@ def run_ssh(host: str, remote_cmd: str) -> SshResult:
         duration_ms=duration_ms,
         stderr_truncated=stderr_over,
     )
-    _log.info(
-        "ssh_call",
-        extra={
-            "host": host,
-            "exit_code": exit_code,
-            "duration_ms": round(duration_ms, 3),
-            "stdout_bytes": len(stdout),
-            "stderr_bytes": len(stderr),
-            "truncated": stdout_over,
-            "stderr_truncated": stderr_over,
-            "outcome": outcome,
-        },
-    )
-    _log.trace(  # type: ignore[attr-defined]
-        "ssh_call_io",
-        extra={
-            "host": host,
-            "stdout": stdout.decode("utf-8", errors="replace"),
-            "stderr": stderr.decode("utf-8", errors="replace"),
-        },
-    )
-    return result
+    return result, timed_out

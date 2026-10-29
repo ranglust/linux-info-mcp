@@ -1,3 +1,4 @@
+import contextlib
 import io
 import subprocess
 
@@ -299,3 +300,187 @@ def test_run_ssh_logs_trace_io_when_trace_level(monkeypatch, tmp_path):
         assert io_entry["stdout"] == "payload"
     finally:
         reset_for_tests()
+
+
+# cold-start gate — first connection runs alone, others wait to reuse its auth
+
+
+def _concurrent_popen(monkeypatch, returncode=0, hold=0.2):
+    import threading
+    import time
+
+    state = {"active": 0, "max_active": 0, "calls": 0}
+    lock = threading.Lock()
+
+    class _SlowPopen(_FakePopen):
+        def wait(self, timeout=None):
+            time.sleep(hold)
+            with lock:
+                state["active"] -= 1
+            return super().wait(timeout)
+
+    def fake_popen(argv, **kwargs):
+        with lock:
+            state["calls"] += 1
+            state["active"] += 1
+            state["max_active"] = max(state["max_active"], state["active"])
+        return _SlowPopen(returncode=returncode)
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    return state
+
+
+def _fan_out(n):
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=n) as ex:
+        return list(ex.map(lambda i: ssh_mod.run_ssh(f"h{i}", "true"), range(n)))
+
+
+def test_gate_cold_start_runs_first_connection_alone(monkeypatch):
+    import threading
+
+    order: list[str] = []
+    first_started = threading.Event()
+    release_first = threading.Event()
+
+    class _P(_FakePopen):
+        def __init__(self, host):
+            super().__init__()
+            self.host = host
+
+        def wait(self, timeout=None):
+            if self.host == "h0":
+                first_started.set()
+                release_first.wait(5)
+            return super().wait(timeout)
+
+    def fake_popen(argv, **kwargs):
+        host = argv[-3]
+        order.append(host)
+        return _P(host)
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    t0 = threading.Thread(target=ssh_mod.run_ssh, args=("h0", "true"))
+    t0.start()
+    assert first_started.wait(5)
+    others = [threading.Thread(target=ssh_mod.run_ssh, args=(f"h{i}", "true")) for i in (1, 2, 3)]
+    for t in others:
+        t.start()
+    for t in others:
+        t.join(0.2)
+    assert order == ["h0"]  # followers blocked while leader authenticates
+    release_first.set()
+    t0.join(5)
+    for t in others:
+        t.join(5)
+    assert sorted(order) == ["h0", "h1", "h2", "h3"]
+
+
+def test_gate_warm_allows_parallel(monkeypatch):
+    state = _concurrent_popen(monkeypatch, hold=0.0)
+    ssh_mod.run_ssh("h", "true")  # warms the gate
+    state = _concurrent_popen(monkeypatch, hold=0.2)
+    _fan_out(4)
+    assert state["max_active"] > 1
+
+
+def test_gate_disabled_runs_parallel_from_cold(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_SSH_WARMUP", "off")
+    state = _concurrent_popen(monkeypatch, hold=0.2)
+    _fan_out(4)
+    assert state["max_active"] > 1
+
+
+def test_gate_cold_fan_out_leader_first_then_parallel(monkeypatch):
+    state = _concurrent_popen(monkeypatch, hold=0.2)
+    _fan_out(4)
+    assert state["calls"] == 4
+    # leader alone, then 3 followers together
+    assert state["max_active"] == 3
+
+
+def test_gate_remote_nonzero_still_warms(monkeypatch):
+    _concurrent_popen(monkeypatch, returncode=1, hold=0.0)
+    ssh_mod.run_ssh("h", "false")
+    assert ssh_mod._gate_is_warm(__import__("time").monotonic())
+
+
+def test_gate_connection_failure_255_stays_cold(monkeypatch):
+    import time
+
+    _concurrent_popen(monkeypatch, returncode=255, hold=0.0)
+    ssh_mod.run_ssh("h", "true")
+    assert not ssh_mod._gate_is_warm(time.monotonic())
+
+
+def test_gate_timeout_stays_cold(monkeypatch):
+    import time
+
+    monkeypatch.setenv("LINUX_INFO_TIMEOUT", "1")
+    _patch_popen(monkeypatch, raise_timeout=True)
+    res = ssh_mod.run_ssh("h", "true")
+    assert res.exit_code == 124
+    assert not ssh_mod._gate_is_warm(time.monotonic())
+
+
+def test_gate_failure_cools_warm_gate(monkeypatch):
+    import time
+
+    _concurrent_popen(monkeypatch, hold=0.0)
+    ssh_mod.run_ssh("h", "true")
+    assert ssh_mod._gate_is_warm(time.monotonic())
+    _concurrent_popen(monkeypatch, returncode=255, hold=0.0)
+    ssh_mod.run_ssh("h", "true")
+    assert not ssh_mod._gate_is_warm(time.monotonic())
+
+
+def test_gate_warm_ttl_expiry(monkeypatch):
+    import time
+
+    monkeypatch.setenv("LINUX_INFO_SSH_WARM_TTL", "0")
+    _concurrent_popen(monkeypatch, hold=0.0)
+    ssh_mod.run_ssh("h", "true")
+    assert not ssh_mod._gate_is_warm(time.monotonic())
+
+
+def test_gate_warm_ttl_invalid_falls_back(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_SSH_WARM_TTL", "abc")
+    assert ssh_mod._warm_ttl() == 60.0
+
+
+def test_gate_follower_falls_back_after_deadline(monkeypatch):
+    import time
+
+    assert ssh_mod._gate_enter(time.monotonic() + 5) is True  # simulate stuck leader
+    t0 = time.monotonic()
+    assert ssh_mod._gate_enter(time.monotonic() + 0.1) is False
+    assert time.monotonic() - t0 < 2
+
+
+def test_gate_releases_leader_on_exception(monkeypatch):
+    import time
+
+    def boom(argv, **kwargs):
+        raise FileNotFoundError("ssh")
+
+    monkeypatch.setattr(subprocess, "Popen", boom)
+    with contextlib.suppress(FileNotFoundError):
+        ssh_mod.run_ssh("h", "true")
+    assert ssh_mod._gate_enter(time.monotonic() + 0.1) is True
+
+
+def test_gate_logs_wait_and_leader(monkeypatch, tmp_path):
+    import json
+
+    from linux_info_mcp.log import setup_logging
+
+    log = tmp_path / "l.jsonl"
+    monkeypatch.setenv("LINUX_INFO_LOG_FILE", str(log))
+    setup_logging()
+    _patch_popen(monkeypatch, returncode=0)
+    ssh_mod.run_ssh("h", "true")
+    ssh_mod.run_ssh("h", "true")
+    lines = [json.loads(x) for x in log.read_text().splitlines() if '"ssh_call"' in x]
+    assert [ln["gate_leader"] for ln in lines] == [True, False]
+    assert all("gate_wait_ms" in ln for ln in lines)

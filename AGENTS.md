@@ -104,7 +104,7 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 - Central timing points: `run_ssh` (SSH-call) and `_call_tool` (tool-call). Per-tool handlers do not log.
 - Custom level `TRACE = 5` for full I/O dumps. Default `LINUX_INFO_LOG_LEVEL=INFO`.
 - Every log line during a tool call automatically carries `tool` and `request_id` fields via a `ContextVar`-backed `logging.Filter`. Don't manually pass `tool=name` in `extra=`.
-- INFO `tool_call` fields: `tool`, `host`, `duration_ms`, `exit_code`, `outcome`. INFO `ssh_call` fields: `host`, `exit_code`, `duration_ms`, `stdout_bytes`, `stderr_bytes`, `truncated`, `outcome`. See SPEC.md §Logging for the full table.
+- INFO `tool_call` fields: `tool`, `host`, `duration_ms`, `exit_code`, `outcome`. INFO `ssh_call` fields: `host`, `exit_code`, `duration_ms`, `gate_wait_ms`, `gate_leader`, `stdout_bytes`, `stderr_bytes`, `truncated`, `outcome`. See SPEC.md §Logging for the full table.
 - `SshResult.duration_ms` is also returned to callers.
 
 ### Tests
@@ -143,6 +143,8 @@ JSON file logging via `linux_info_mcp/log.py`. Disabled when `LINUX_INFO_LOG_FIL
 |-----|---------|---------|
 | `LINUX_INFO_SSH_CMD` | `ssh` | Argv prefix; parsed with `shlex.split`. When set, owns full argv (no mux auto-injected). |
 | `LINUX_INFO_SSH_MUX` | on | When `LINUX_INFO_SSH_CMD` unset, default `ssh` gets ControlMaster mux (`ControlPath=$TMPDIR/lim-%C`, `ControlPersist=60s`). `0`/`false`/`no`/`off` disables. |
+| `LINUX_INFO_SSH_WARMUP` | on | Cold-start gate on every outgoing connection: while cold, one connection runs and concurrent callers wait to reuse its cached auth/mux. `0`/`false`/`no`/`off` disables. |
+| `LINUX_INFO_SSH_WARM_TTL` | `60` | Seconds a successful connection keeps the gate open. |
 | `LINUX_INFO_HOSTS` | (empty) | Comma-list host allowlist; empty = any. |
 | `LINUX_INFO_TIMEOUT` | `30` | Seconds, subprocess timeout. |
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap on stdout and stderr. |

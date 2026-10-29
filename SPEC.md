@@ -1267,6 +1267,8 @@ Read a single member from a tar-family or zip archive on a remote host. Read-onl
 |-----|---------|---------|
 | `LINUX_INFO_SSH_CMD` | `ssh` | Command + flags. Parsed with `shlex.split` (shell-style: quotes/escapes honored); becomes argv prefix. Final argv shape is `[<prefix>...] <host> -- <remote_cmd>`. The `--` separator is included so OpenSSH stops option parsing before the remote command; wrappers that don't recognise `--` (some teleport `tsh ssh` forks, etc.) may need the `--` stripped externally. Example: `ssh -F /home/me/.ssh/config -o ConnectTimeout=5`. |
 | `LINUX_INFO_SSH_MUX` | on | Only when `LINUX_INFO_SSH_CMD` is unset: the default `ssh` argv gets connection multiplexing (`-o ControlMaster=auto -o ControlPath=$TMPDIR/lim-%C -o ControlPersist=60s`), so repeated/fan-out calls reuse one master and skip per-call handshakes. `%C` is a fixed-length connection hash (avoids the ~104-char socket-path limit). Set `0`/`false`/`no`/`off` to disable. When `LINUX_INFO_SSH_CMD` is set, the operator owns the full argv and no mux is injected. |
+| `LINUX_INFO_SSH_WARMUP` | on | Cold-start gate for every outgoing connection, regardless of `LINUX_INFO_SSH_CMD`. While no connection has succeeded within `LINUX_INFO_SSH_WARM_TTL`, only one `run_ssh` subprocess runs; concurrent callers (fan-out workers, parallel MCP requests) wait for it so they reuse whatever it cached (interactive login, agent unlock, mux master) instead of each triggering their own. Success = subprocess finished without timeout and exit code != 255 (ssh's own connect/auth failure). On success all waiters run in parallel; on failure the next waiter becomes leader. A waiter that waits a full `LINUX_INFO_TIMEOUT` stops waiting and runs anyway. Set `0`/`false`/`no`/`off` to disable. |
+| `LINUX_INFO_SSH_WARM_TTL` | `60` | Seconds a successful connection keeps the gate open. After it lapses the next burst serializes behind one leader again. `0` = always gate. Invalid falls back to 60. |
 | `LINUX_INFO_HOSTS` | `` (empty) | Comma-separated allowlist. Empty = any host. Hostnames matched exactly. |
 | `LINUX_INFO_TIMEOUT` | `30` | Seconds before subprocess kill. On timeout: `exit_code=124`, `[timeout]` appended to `stderr`. |
 | `LINUX_INFO_MAX_BYTES` | `1048576` | 1 MiB cap applied to both stdout and stderr. Stdout truncation sets `truncated: true`. |
@@ -1424,7 +1426,7 @@ JSONL file logging, off by default.
 | `linux_info_mcp.server` | INFO | `tool_call` | `tool`, `host`, `duration_ms`, `exit_code`, `outcome` (`ok` / `nonzero` / `partial` / `validation_error` / `unknown_tool` / `handler_error`), `host_count` (multi-host only; `host` is `null` then), `error` (on any non-`ok` outcome) |
 | `linux_info_mcp.server` | TRACE | `tool_call_out` | `tool`, `result` |
 | `linux_info_mcp.ssh` | TRACE | `ssh_call_start` | `host`, `remote_cmd` |
-| `linux_info_mcp.ssh` | INFO | `ssh_call` | `host`, `exit_code`, `duration_ms`, `stdout_bytes`, `stderr_bytes`, `truncated`, `stderr_truncated`, `outcome` (`ok` / `nonzero` / `timeout`) |
+| `linux_info_mcp.ssh` | INFO | `ssh_call` | `host`, `exit_code`, `duration_ms`, `gate_wait_ms`, `gate_leader`, `stdout_bytes`, `stderr_bytes`, `truncated`, `stderr_truncated`, `outcome` (`ok` / `nonzero` / `timeout`) |
 | `linux_info_mcp.ssh` | TRACE | `ssh_call_io` | `host`, `stdout`, `stderr` |
 
 `duration_ms` is also returned on `SshResult.duration_ms` so callers can act on it without scraping logs.

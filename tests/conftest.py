@@ -18,10 +18,15 @@ def _clean_env(monkeypatch):
         "LINUX_INFO_MAX_HOSTS",
         "LINUX_INFO_PARALLELISM",
         "LINUX_INFO_SUDO",
+        "LINUX_INFO_SSH_WARMUP",
+        "LINUX_INFO_SSH_WARM_TTL",
     ):
         monkeypatch.delenv(var, raising=False)
     from linux_info_mcp.log import reset_for_tests
+    from linux_info_mcp.ssh import reset_gate_for_tests
 
     reset_for_tests()
+    reset_gate_for_tests()
     yield
     reset_for_tests()
+    reset_gate_for_tests()
