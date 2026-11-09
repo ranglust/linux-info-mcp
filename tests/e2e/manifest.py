@@ -71,6 +71,10 @@ TOOL_ARGS: dict[str, list[dict]] = {
     ],
     # proc
     "proc_limits": [{"pid": 1}],
+    # strace: needs strace + ptrace rights on pid 1 (root/sudo); error baseline otherwise.
+    "strace": [{"pid": 1, "duration": 2}],
+    # net
+    "ss": [{}, {"tcp": True, "numeric": True, "info": True, "state": "established"}],
     # net: ethtool requires iface; eth0 is best-effort (error baseline on hosts
     # without eth0, which is fine — both sides will error consistently).
     "ethtool": [{"iface": "eth0"}],

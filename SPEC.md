@@ -1,6 +1,6 @@
 # linux-info-mcp — Specification
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 78 tools across 18 modules (files, archive, systemd, journalctl, perf, sampling, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. Exposes per-tool wrappers around common Linux inspection commands. 79 tools across 18 modules (files, archive, systemd, journalctl, perf, sampling, net, lldp, proc, disk, kernel, pkg, sys, time, fs, docker, facts, triage). Each tool targets a single `host` or, via `hosts`, a bounded parallel fan-out (see below).
 
 ## Goals & Non-Goals
 
@@ -260,11 +260,12 @@ Parsing is **optional per tool** (`ToolSpec.parser`). When `output_mode` is non-
 - `extended: bool | None` — `-e`.
 - `summary: bool | None` — `-s`.
 - `memory: bool | None` — `-m`.
+- `info: bool | None` — `-i`. Per-socket TCP internals (rtt, cwnd, `segs_out`, `retrans`, `bytes_acked`, ...).
 - `state: str | None` — `state <s>`. Whitelist: `established`, `syn-sent`, `syn-recv`, `fin-wait-1`, `fin-wait-2`, `time-wait`, `close`, `close-wait`, `last-ack`, `listening`, `closing`, `all`, `connected`, `synchronized`, `bucket`, `big`.
 - `family: str | None` — `-f <fam>`. Whitelist: `inet`, `inet6`, `unix`.
 
 **Behavior**
-- Remote command: `ss [-t] [-u] [-l] [-a] [-n] [-p] [-e] [-s] [-m] [-f <fam>] [state <s>]`. No raw filter passthrough.
+- Remote command: `ss [-t] [-u] [-l] [-a] [-n] [-p] [-e] [-s] [-m] [-i] [-f <fam>] [state <s>]`. No raw filter passthrough.
 
 **Returns** `{stdout, stderr, exit_code, truncated}`.
 
@@ -1261,6 +1262,30 @@ Read a single member from a tar-family or zip archive on a remote host. Read-onl
 
 ---
 
+### 79. `strace`
+
+Attach `strace` to an existing process on a remote host for a bounded duration. Attach-only (`-p`); never launches a command. Privilege-prone (`sudo -n` when `LINUX_INFO_SUDO`). Note: ptrace slows the target while attached; keep `duration` short on latency-sensitive processes.
+
+**Args**
+- `host: str` — required.
+- `pid: int` — required. Range `[1, 4194304]`. `bool` subtype rejected.
+- `duration: int | None` — seconds, `[1, 20]`, default `5`. Must stay below `LINUX_INFO_TIMEOUT`.
+- `summary: bool | None` — default `true` → `-c` (per-syscall counts/times/errors). `false` = raw trace.
+- `follow_forks: bool | None` — `-f` (all threads/children).
+- `syscalls: list[str] | None` — 1–64 entries, each a syscall name (`re.fullmatch` `[a-z_][a-z0-9_]{0,63}`) or class from whitelist `%file,%process,%network,%signal,%ipc,%desc,%memory,%creds,%clock`. Joined into `-e trace=<a,b,...>` (single `shlex.quote`-escaped token). Negation/regex forms rejected.
+- `timestamps: bool | None` — `-tt`. Raw mode only.
+- `syscall_times: bool | None` — `-T`. Raw mode only.
+- `string_limit: int | None` — `-s <n>`, `[0, 256]`. Raw mode only.
+
+**Behavior**
+- Remote command: `LC_ALL=C timeout --preserve-status -s INT <duration> [sudo -n] strace -q -o /dev/stdout [-c] [-f] [-tt] [-T] [-s <n>] [-e trace=<list>] -p <pid>`.
+- `timeout` wraps `sudo` (not the reverse) so sudoers only needs to grant `strace`. SIGINT detaches cleanly and makes `-c` print its table; `-o /dev/stdout` routes trace output to stdout.
+- `timestamps`/`syscall_times`/`string_limit` with `summary=true` → `validation_error`.
+
+**Returns** `{stdout, stderr, exit_code, truncated}`.
+
+---
+
 ## Configuration (environment variables)
 
 | Var | Default | Meaning |
@@ -1297,7 +1322,7 @@ Every result with an integer `exit_code` also gains `error_kind`, normalized fro
 
 ### Privilege escalation (opt-in, off by default)
 
-`LINUX_INFO_SUDO=1` makes the **privilege-prone** tools prefix their remote command with `sudo -n` (`-n` = non-interactive: it fails fast instead of hanging on a password prompt). The set is exactly those tools that plausibly need root: `smartctl`, `dmidecode`, `dmesg`, `ethtool`, `nft_list`, `iptables_list`, `conntrack`, `lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`. Non-privileged tools are never prefixed (no point, and it would needlessly widen the required sudoers).
+`LINUX_INFO_SUDO=1` makes the **privilege-prone** tools prefix their remote command with `sudo -n` (`-n` = non-interactive: it fails fast instead of hanging on a password prompt). The set is exactly those tools that plausibly need root: `smartctl`, `dmidecode`, `dmesg`, `ethtool`, `nft_list`, `iptables_list`, `conntrack`, `lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`, `strace`. Non-privileged tools are never prefixed (no point, and it would needlessly widen the required sudoers).
 
 **Design:** the server is mechanism; **sudoers is policy.** `sudo -n` is applied per-tool to the specific binary (e.g. `LC_ALL=C sudo -n smartctl ...`), never as a blanket `sudo sh -c '<pipeline>'` — the latter would require passwordless `sudo sh` (effective root, unconstrainable by sudoers) and defeat the point. What the escalation can actually do is bounded entirely by the operator's sudoers file, which they already control. The feature grants nothing the login user is not already granted.
 
@@ -1341,7 +1366,7 @@ linux-info-mcp/
       sampling.py            # sar, atop, pmrep
       net.py                 # ss, ip_addr, ip_route, lsof_net, arp_table, tc_qdisc, ethtool, conntrack, net_protocol_stats, nft_list, iptables_list, dig
       lldp.py                # lldp_neighbors, lldp_interfaces, lldp_statistics, lldp_chassis
-      proc.py                # lsof, pgrep, pidof, top, proc_limits
+      proc.py                # lsof, pgrep, pidof, top, proc_limits, strace
       disk.py                # du, lsblk, blkid, smartctl, blockdev
       kernel.py              # dmesg, uname, sysctl, slabtop, numastat, cgroup_stats, systemd_analyze
       pkg.py                 # dpkg_list, rpm_list, apt_list_installed, reboot_required
@@ -1382,7 +1407,7 @@ linux-info-mcp/
   SECURITY.md                # threat model + reporting
 ```
 
-78 tools across 18 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
+79 tools across 18 modules. `server.py` auto-discovers every non-underscore submodule of `tools/` via `pkgutil.iter_modules` and aggregates each module's `TOOLS` list — adding a tool needs no edit to `server.py`.
 
 Per-tool registration contract (`linux_info_mcp/tools/__init__.py`):
 

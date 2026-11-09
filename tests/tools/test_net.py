@@ -36,10 +36,11 @@ def test_ss_all_flags_builder():
         extended=True,
         summary=True,
         memory=True,
+        info=True,
         family="inet",
         state="established",
     )
-    assert cmd == ("LC_ALL=C ss -t -u -l -a -n -p -e -s -m -f inet state established")
+    assert cmd == ("LC_ALL=C ss -t -u -l -a -n -p -e -s -m -i -f inet state established")
 
 
 def test_ss_handler_default(monkeypatch):
@@ -68,6 +69,20 @@ def test_ss_handler_state_and_family(monkeypatch):
     captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
     mod.handle_ss({"host": "h1", "family": "inet6", "state": "time-wait"})
     assert captured["cmd"] == "LC_ALL=C ss -f inet6 state time-wait"
+
+
+def test_ss_handler_info_tcp_established(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_ss(
+        {"host": "h1", "tcp": True, "numeric": True, "info": True, "state": "established"}
+    )
+    assert captured["cmd"] == "LC_ALL=C ss -t -n -i state established"
+
+
+def test_ss_handler_rejects_non_bool_info(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_ss({"host": "h1", "info": "-oProxyCommand=evil"})
 
 
 def test_ss_handler_rejects_bad_state(monkeypatch):

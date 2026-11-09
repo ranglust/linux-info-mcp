@@ -60,6 +60,7 @@ def build_remote_cmd_ss(
     extended: bool = False,
     summary: bool = False,
     memory: bool = False,
+    info: bool = False,
     state: str | None = None,
     family: str | None = None,
 ) -> str:
@@ -83,6 +84,8 @@ def build_remote_cmd_ss(
         parts.append("-s")
     if memory:
         parts.append("-m")
+    if info:
+        parts.append("-i")
     if family is not None:
         parts += ["-f", shlex.quote(family)]
     if state is not None:
@@ -108,6 +111,7 @@ def handle_ss(args: dict) -> dict:
         extended=_bool(args.get("extended"), "extended"),
         summary=_bool(args.get("summary"), "summary"),
         memory=_bool(args.get("memory"), "memory"),
+        info=_bool(args.get("info"), "info"),
         state=state,
         family=family,
     )
@@ -134,6 +138,7 @@ SS_SCHEMA = {
         "extended": {"type": ["boolean", "null"]},
         "summary": {"type": ["boolean", "null"]},
         "memory": {"type": ["boolean", "null"]},
+        "info": {"type": ["boolean", "null"]},
         "state": {"type": ["string", "null"]},
         "family": {"type": ["string", "null"]},
     },

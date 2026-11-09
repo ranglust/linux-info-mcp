@@ -1,14 +1,15 @@
-"""Process tools: lsof, pgrep, pidof, top."""
+"""Process tools: lsof, pgrep, pidof, top, proc_limits, strace."""
 
 from __future__ import annotations
 
 import re
 import shlex
 
-from ..ssh import run_ssh
+from ..ssh import run_ssh, sudo_tokens
 from ..validate import (
     reject_unsafe_chars,
     validate_host,
+    validate_int_in_range,
     validate_path,
 )
 from . import ToolSpec
@@ -356,6 +357,129 @@ PROC_LIMITS_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
+# strace
+# ---------------------------------------------------------------------------
+
+_SYSCALL_RE = re.compile(r"[a-z_][a-z0-9_]{0,63}")
+_STRACE_CLASSES = {
+    "%file",
+    "%process",
+    "%network",
+    "%signal",
+    "%ipc",
+    "%desc",
+    "%memory",
+    "%creds",
+    "%clock",
+}
+
+
+def _validate_syscalls(syscalls) -> list[str]:
+    if not isinstance(syscalls, list) or not syscalls:
+        raise ValueError("syscalls must be a non-empty list")
+    if len(syscalls) > 64:
+        raise ValueError("syscalls must have at most 64 entries")
+    for s in syscalls:
+        if not isinstance(s, str) or not (s in _STRACE_CLASSES or _SYSCALL_RE.fullmatch(s)):
+            raise ValueError(
+                f"syscalls entry must be a syscall name or one of {sorted(_STRACE_CLASSES)}"
+            )
+    return syscalls
+
+
+def build_remote_cmd_strace(
+    *,
+    pid: int,
+    duration: int = 5,
+    summary: bool = True,
+    follow_forks: bool = False,
+    syscalls: list[str] | None = None,
+    timestamps: bool = False,
+    syscall_times: bool = False,
+    string_limit: int | None = None,
+) -> str:
+    """Build LC_ALL=C timeout-bounded strace attach. Attach-only (-p); never launches a command."""
+    if summary and (timestamps or syscall_times or string_limit is not None):
+        raise ValueError("timestamps/syscall_times/string_limit are not allowed with summary")
+    # timeout wraps sudo (not the reverse) so sudoers only needs to grant strace.
+    parts = ["LC_ALL=C", "timeout", "--preserve-status", "-s", "INT", str(duration)]
+    parts += [*sudo_tokens(), "strace", "-q", "-o", "/dev/stdout"]
+    if summary:
+        parts.append("-c")
+    if follow_forks:
+        parts.append("-f")
+    if timestamps:
+        parts.append("-tt")
+    if syscall_times:
+        parts.append("-T")
+    if string_limit is not None:
+        parts += ["-s", str(string_limit)]
+    if syscalls is not None:
+        parts += ["-e", shlex.quote("trace=" + ",".join(syscalls))]
+    parts += ["-p", str(pid)]
+    return " ".join(parts)
+
+
+def handle_strace(args: dict) -> dict:
+    host = validate_host(args["host"])
+    pid_in = args.get("pid")
+    if pid_in is None:
+        raise ValueError("pid is required")
+    pid = validate_pid(pid_in)
+    duration = args.get("duration")
+    duration = (
+        5 if duration is None else validate_int_in_range(duration, lo=1, hi=20, label="duration")
+    )
+    summary = args.get("summary")
+    if summary is None:
+        summary = True
+    elif not isinstance(summary, bool):
+        raise ValueError("summary must be a bool")
+    syscalls = args.get("syscalls")
+    if syscalls is not None:
+        syscalls = _validate_syscalls(syscalls)
+    string_limit = args.get("string_limit")
+    if string_limit is not None:
+        string_limit = validate_int_in_range(string_limit, lo=0, hi=256, label="string_limit")
+    cmd = build_remote_cmd_strace(
+        pid=pid,
+        duration=duration,
+        summary=summary,
+        follow_forks=_bool(args.get("follow_forks"), "follow_forks"),
+        syscalls=syscalls,
+        timestamps=_bool(args.get("timestamps"), "timestamps"),
+        syscall_times=_bool(args.get("syscall_times"), "syscall_times"),
+        string_limit=string_limit,
+    )
+    res = run_ssh(host, cmd)
+    return {
+        "stdout": _decode_text(res.stdout),
+        "stderr": _decode_text(res.stderr),
+        "exit_code": res.exit_code,
+        "truncated": res.truncated,
+        "stderr_truncated": res.stderr_truncated,
+    }
+
+
+STRACE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "host": {"type": "string"},
+        "pid": {"type": "integer"},
+        "duration": {"type": ["integer", "null"]},
+        "summary": {"type": ["boolean", "null"]},
+        "follow_forks": {"type": ["boolean", "null"]},
+        "syscalls": {"type": ["array", "null"], "items": {"type": "string"}},
+        "timestamps": {"type": ["boolean", "null"]},
+        "syscall_times": {"type": ["boolean", "null"]},
+        "string_limit": {"type": ["integer", "null"]},
+    },
+    "required": ["host", "pid"],
+    "additionalProperties": False,
+}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -401,5 +525,17 @@ TOOLS: list[ToolSpec] = [
         ),
         input_schema=PROC_LIMITS_SCHEMA,
         handler=handle_proc_limits,
+    ),
+    ToolSpec(
+        name="strace",
+        description=(
+            "Attach strace to an existing pid on a remote host via SSH for a bounded duration "
+            "(1-20s, default 5). Default summary=true (-c syscall counts/times); summary=false "
+            "gives a raw trace (optional timestamps, syscall_times, string_limit). syscalls "
+            "filters by name or class (%file, %network, ...). follow_forks traces all threads. "
+            "ptrace slows the target while attached. Returns stdout, stderr, exit_code, truncated."
+        ),
+        input_schema=STRACE_SCHEMA,
+        handler=handle_strace,
     ),
 ]

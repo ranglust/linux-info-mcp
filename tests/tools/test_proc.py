@@ -460,7 +460,7 @@ def test_top_truncated_propagates(monkeypatch):
 
 def test_tools_registry_names():
     names = [t.name for t in mod.TOOLS]
-    assert names == ["lsof", "pgrep", "pidof", "top", "proc_limits"]
+    assert names == ["lsof", "pgrep", "pidof", "top", "proc_limits", "strace"]
     for spec in mod.TOOLS:
         assert "host" in spec.input_schema["required"]
         assert callable(spec.handler)
@@ -527,4 +527,133 @@ def test_proc_limits_rejects_pid_string(monkeypatch):
 def test_proc_limits_truncated_propagates(monkeypatch):
     _stub(monkeypatch, SshResult(b"x", b"", 0, True))
     out = mod.handle_proc_limits({"host": "h1", "pid": 1})
+    assert out["truncated"] is True
+
+
+# ---------------------------------------------------------------------------
+# strace
+# ---------------------------------------------------------------------------
+
+_STRACE_PREFIX = "LC_ALL=C timeout --preserve-status -s INT"
+
+
+def test_strace_default_builder():
+    assert mod.build_remote_cmd_strace(pid=42) == (
+        f"{_STRACE_PREFIX} 5 strace -q -o /dev/stdout -c -p 42"
+    )
+
+
+def test_strace_raw_all_flags_builder():
+    cmd = mod.build_remote_cmd_strace(
+        pid=42,
+        duration=10,
+        summary=False,
+        follow_forks=True,
+        syscalls=["%network", "read"],
+        timestamps=True,
+        syscall_times=True,
+        string_limit=128,
+    )
+    assert cmd == (
+        f"{_STRACE_PREFIX} 10 strace -q -o /dev/stdout -f -tt -T -s 128 "
+        "-e trace=%network,read -p 42"
+    )
+
+
+def test_strace_handler_default(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"summary", b"", 0, False))
+    out = mod.handle_strace({"host": "h1", "pid": 42})
+    assert captured["host"] == "h1"
+    assert captured["cmd"] == f"{_STRACE_PREFIX} 5 strace -q -o /dev/stdout -c -p 42"
+    assert out["stdout"] == "summary"
+    assert out["exit_code"] == 0
+
+
+def test_strace_handler_summary_follow_forks(monkeypatch):
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_strace({"host": "h1", "pid": 7, "duration": 10, "follow_forks": True})
+    assert captured["cmd"] == f"{_STRACE_PREFIX} 10 strace -q -o /dev/stdout -c -f -p 7"
+
+
+def test_strace_sudo_wraps_strace_inside_timeout(monkeypatch):
+    monkeypatch.setenv("LINUX_INFO_SUDO", "1")
+    captured = _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    mod.handle_strace({"host": "h1", "pid": 42})
+    assert captured["cmd"] == (f"{_STRACE_PREFIX} 5 sudo -n strace -q -o /dev/stdout -c -p 42")
+
+
+def test_strace_rejects_raw_flags_with_summary(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    for extra in ({"timestamps": True}, {"syscall_times": True}, {"string_limit": 32}):
+        with pytest.raises(ValueError):
+            mod.handle_strace({"host": "h1", "pid": 42, **extra})
+
+
+def test_strace_requires_pid(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_strace({"host": "h1"})
+
+
+@pytest.mark.parametrize("pid", [0, 4194305, True, "1; rm -rf /", -1])
+def test_strace_rejects_bad_pid(monkeypatch, pid):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_strace({"host": "h1", "pid": pid})
+
+
+@pytest.mark.parametrize("duration", [0, 21, True, "5", 3600])
+def test_strace_rejects_bad_duration(monkeypatch, duration):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_strace({"host": "h1", "pid": 42, "duration": duration})
+
+
+@pytest.mark.parametrize(
+    "syscalls",
+    [
+        [],
+        "read",
+        ["read;rm -rf /"],
+        ["-oProxyCommand=evil"],
+        ["read\n"],
+        ["read\x00"],
+        ["read,write"],
+        ["%all"],
+        ["!read"],
+        ["/read/"],
+        ["Read"],
+        [1],
+        ["a"] * 65,
+    ],
+)
+def test_strace_rejects_bad_syscalls(monkeypatch, syscalls):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_strace({"host": "h1", "pid": 42, "summary": False, "syscalls": syscalls})
+
+
+@pytest.mark.parametrize("value", [-1, 257, True, "64"])
+def test_strace_rejects_bad_string_limit(monkeypatch, value):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_strace({"host": "h1", "pid": 42, "summary": False, "string_limit": value})
+
+
+@pytest.mark.parametrize("key", ["summary", "follow_forks", "timestamps", "syscall_times"])
+def test_strace_rejects_non_bool_flags(monkeypatch, key):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_strace({"host": "h1", "pid": 42, key: "-oProxyCommand=evil"})
+
+
+def test_strace_rejects_bad_host(monkeypatch):
+    _stub(monkeypatch, SshResult(b"", b"", 0, False))
+    with pytest.raises(ValueError):
+        mod.handle_strace({"host": "-oProxyCommand=evil", "pid": 42})
+
+
+def test_strace_truncated_propagates(monkeypatch):
+    _stub(monkeypatch, SshResult(b"x", b"", 0, True))
+    out = mod.handle_strace({"host": "h1", "pid": 42})
     assert out["truncated"] is True

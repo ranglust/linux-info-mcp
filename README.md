@@ -3,7 +3,7 @@
 ![tests](https://github.com/ranglust/linux-info-mcp/actions/workflows/tests.yml/badge.svg)
 [![codecov](https://codecov.io/gh/ranglust/linux-info-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/ranglust/linux-info-mcp)
 
-MCP server that runs read-only diagnostic commands on remote hosts via SSH. 78 tools across 18 modules:
+MCP server that runs read-only diagnostic commands on remote hosts via SSH. 79 tools across 18 modules:
 
 - files: `read_file`, `find_files`, `read_binary`
 - archive: `archive_list`, `archive_read`
@@ -13,7 +13,7 @@ MCP server that runs read-only diagnostic commands on remote hosts via SSH. 78 t
 - sampling: `sar`, `atop`, `pmrep`
 - net: `ss`, `ip_addr`, `ip_route`, `lsof_net`, `arp_table`, `tc_qdisc`, `ethtool`, `conntrack`, `net_protocol_stats`, `nft_list`, `iptables_list`, `dig`
 - lldp: `lldp_neighbors`, `lldp_interfaces`, `lldp_statistics`, `lldp_chassis`
-- proc: `lsof`, `pgrep`, `pidof`, `top`, `proc_limits`
+- proc: `lsof`, `pgrep`, `pidof`, `top`, `proc_limits`, `strace`
 - disk: `du`, `lsblk`, `blkid`, `smartctl`, `blockdev`
 - kernel: `dmesg`, `uname`, `sysctl`, `slabtop`, `numastat`, `cgroup_stats`, `systemd_analyze`
 - pkg: `dpkg_list`, `rpm_list`, `apt_list_installed`, `reboot_required`
